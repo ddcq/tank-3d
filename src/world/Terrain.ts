@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-const ROAD_WIDTH = 12
+const ROAD_WIDTH = 18
 const ROAD_LENGTH = 200
 
 export class Terrain {

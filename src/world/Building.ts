@@ -34,8 +34,8 @@ export class Building {
     this.addRubble(group, w, d, damage > 0.7 ? h * 0.3 : h)
 
     const xPos = side === 'left'
-      ? -9 - w / 2 - Math.random() * 2
-      : 9 + w / 2 + Math.random() * 2
+      ? -12 - w / 2 - Math.random() * 2
+      : 12 + w / 2 + Math.random() * 2
 
     group.position.set(xPos, 0, 0)
     this.mesh = group

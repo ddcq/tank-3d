@@ -8,6 +8,12 @@ const RUSSIAN_WHITE = 0xffffff
 const RUSSIAN_BLUE = 0x0039a6
 const RUSSIAN_RED = 0xd52b1e
 
+export enum SoldierType {
+  Standard = 'standard',
+  Heavy = 'heavy',
+  Rapid = 'rapid',
+}
+
 export class EnemySoldier extends Entity {
   isEnemy: boolean = true
   row: number
@@ -17,21 +23,49 @@ export class EnemySoldier extends Entity {
   moveDir = 1 as number
   bobOffset = Math.random() * Math.PI * 2
 
+  hp: number = 1
+  maxHp: number = 1
+  soldierType: SoldierType = SoldierType.Standard
+  speedMultiplier: number = 1
+  targetX: number = 0
+  isFlanker: boolean = false
+
   private DEATH_DURATION = 0.8
   private _isDying = false
   private deathTimer = 0
 
-  constructor(x: number, z: number, row: number, col: number) {
+  private flashMaterials: THREE.MeshStandardMaterial[] = []
+  private hitFlashTimer = 0
+  private readonly HIT_FLASH_DURATION = 0.15
+  private hpBarBg: THREE.Mesh | null = null
+  private hpBarFg: THREE.Mesh | null = null
+
+  constructor(x: number, z: number, row: number, col: number, maxHp: number = 1, type: SoldierType = SoldierType.Standard) {
     const group = new THREE.Group()
     super(group)
     this.position.x = x
     this.position.z = z
-    // Position soldiers so that their feet are at y=0 (on road surface)
     this.position.y = -0.33
     this.row = row
     this.col = col
+    this.soldierType = type
 
-    // Add a debug line to visualize soldier position (red vertical line)
+    switch (type) {
+      case SoldierType.Heavy:
+        this.speedMultiplier = 0.6
+        this.hp = maxHp + 2
+        this.maxHp = maxHp + 2
+        break
+      case SoldierType.Rapid:
+        this.speedMultiplier = 1.5
+        this.hp = 1
+        this.maxHp = 1
+        break
+      default:
+        this.hp = maxHp
+        this.maxHp = maxHp
+    }
+
     const debugLineGeo = new THREE.BufferGeometry()
     const debugLineMat = new THREE.LineBasicMaterial({ color: 0xff0000 })
     const debugLinePoints = [
@@ -42,7 +76,6 @@ export class EnemySoldier extends Entity {
     const debugLine = new THREE.Line(debugLineGeo, debugLineMat)
     group.add(debugLine)
 
-    // Legs
     for (const side of [-0.18, 0.18]) {
       const legGeo = new THREE.BoxGeometry(0.22, 0.65, 0.22)
       const legMat = new THREE.MeshStandardMaterial({ color: 0x4a5d23 })
@@ -51,32 +84,40 @@ export class EnemySoldier extends Entity {
       group.add(leg)
     }
 
-    // Body (military uniform - Russian green)
-    const bodyGeo = new THREE.BoxGeometry(0.55, 0.7, 0.35)
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x546a4b })
+    let bodyColor = 0x546a4b
+    let bodyWidth = 0.55
+    if (type === SoldierType.Heavy) {
+      bodyColor = 0x3d2b1f
+      bodyWidth = 0.7
+    } else if (type === SoldierType.Rapid) {
+      bodyColor = 0x8a9ba8
+      bodyWidth = 0.42
+    }
+
+    const bodyGeo = new THREE.BoxGeometry(bodyWidth, 0.7, 0.35)
+    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor })
     const body = new THREE.Mesh(bodyGeo, bodyMat)
     body.position.y = 1
     body.castShadow = true
     group.add(body)
+    this.flashMaterials.push(bodyMat)
 
-    // Russian flag stripe on shoulder (white-blue-red)
     for (let i = 0; i < 3; i++) {
       const colors = [RUSSIAN_WHITE, RUSSIAN_BLUE, RUSSIAN_RED] as const
-      const cGeo = new THREE.BoxGeometry(0.57, 0.04, 0.37)
+      const cGeo = new THREE.BoxGeometry(bodyWidth + 0.02, 0.04, 0.37)
       const cMat = new THREE.MeshStandardMaterial({ color: colors[i] })
       const stripe = new THREE.Mesh(cGeo, cMat)
       stripe.position.y = 1.28 - i * 0.06
       group.add(stripe)
     }
 
-    // Head
     const headGeo = new THREE.BoxGeometry(0.35, 0.38, 0.35)
     const headMat = new THREE.MeshStandardMaterial({ color: SOLDIER_SKIN })
     const head = new THREE.Mesh(headGeo, headMat)
     head.position.y = 1.52
     group.add(head)
+    this.flashMaterials.push(headMat)
 
-    // Helmet (winter hat / ushanka style)
     for (const side of [-0.22, 0.22]) {
       const flapGeo = new THREE.BoxGeometry(0.18, 0.22, 0.36)
       const flapMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f0 })
@@ -90,7 +131,6 @@ export class EnemySoldier extends Entity {
     hatTop.position.y = 1.79
     group.add(hatTop)
 
-    // Gun (AK-style rifle held forward)
     for (const side of [-0.32, 0.32]) {
       const gunBarrelGeo = new THREE.BoxGeometry(0.06, 0.06, 0.6)
       const gunMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
@@ -104,7 +144,6 @@ export class EnemySoldier extends Entity {
       group.add(gunStock)
     }
 
-    // Sand boots
     for (const side of [-0.18, 0.18]) {
       const bootGeo = new THREE.BoxGeometry(0.24, 0.15, 0.3)
       const bootMat = new THREE.MeshStandardMaterial({ color: SOLDIER_HAIR })
@@ -113,17 +152,40 @@ export class EnemySoldier extends Entity {
       group.add(boot)
     }
 
-    // Rifle tip indicator for shooting
     this.rifleTip = group.children[group.children.length - 1]
+
+    if (this.maxHp > 1) {
+      const barBgGeo = new THREE.BoxGeometry(0.4, 0.04, 0.05)
+      const barBgMat = new THREE.MeshBasicMaterial({ color: 0x333333 })
+      this.hpBarBg = new THREE.Mesh(barBgGeo, barBgMat)
+      this.hpBarBg.position.y = 2.05
+      group.add(this.hpBarBg)
+
+      const barFgGeo = new THREE.BoxGeometry(0.38, 0.03, 0.04)
+      const barFgMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      this.hpBarFg = new THREE.Mesh(barFgGeo, barFgMat)
+      this.hpBarFg.position.y = 2.05
+      group.add(this.hpBarFg)
+    }
   }
 
   private rifleTip: THREE.Object3D | undefined
 
   get isDying(): boolean { return this._isDying }
 
-  hit(): void {
-    this._isDying = true
-    this.deathTimer = this.DEATH_DURATION
+  hit(): boolean {
+    this.hp--
+    if (this.hp <= 0) {
+      this._isDying = true
+      this.deathTimer = this.DEATH_DURATION
+      return true
+    }
+    this.hitFlashTimer = this.HIT_FLASH_DURATION
+    for (const mat of this.flashMaterials) {
+      mat.emissive.setHex(0xff0000)
+      mat.emissiveIntensity = 0.5
+    }
+    return false
   }
 
   getRifleTipPosition(): THREE.Vector3 {
@@ -144,6 +206,16 @@ export class EnemySoldier extends Entity {
   }
 
   update(dt: number, time: number = 0): void {
+    if (this.hitFlashTimer > 0) {
+      this.hitFlashTimer -= dt
+      if (this.hitFlashTimer <= 0) {
+        for (const mat of this.flashMaterials) {
+          mat.emissive.setHex(0x000000)
+          mat.emissiveIntensity = 0
+        }
+      }
+    }
+
     if (this._isDying) {
       this.deathTimer -= dt
       const t = 1 - this.deathTimer / this.DEATH_DURATION
@@ -158,6 +230,13 @@ export class EnemySoldier extends Entity {
 
     const bob = Math.sin(time * 3 + this.bobOffset) * 0.03
     this.mesh.position.y = bob
+
+    if (this.hpBarFg && this.maxHp > 1) {
+      const ratio = Math.max(0, this.hp / this.maxHp)
+      this.hpBarFg.scale.x = ratio
+      const color = ratio > 0.5 ? 0x00ff00 : ratio > 0.25 ? 0xffff00 : 0xff0000
+      ;(this.hpBarFg.material as THREE.MeshBasicMaterial).color.setHex(color)
+    }
 
     this.shootCooldown -= dt
     if (this.shootCooldown <= 0 && this.onFireBullet) {

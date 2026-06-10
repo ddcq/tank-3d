@@ -69,6 +69,20 @@ export class HUD {
     if (!c.querySelector('.hud-score')) c.append(this.scoreEl, this.waveEl, this.livesEl, this.infoEl)
   }
 
+  showGameOver(): void {
+    const go = document.getElementById('game-over')
+    if (go) return
+    const el = document.createElement('div')
+    el.id = 'game-over'
+    el.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.7);z-index:30;font-family:monospace'
+    el.innerHTML = '<div style="color:#ff4444;font-size:52px;font-weight:bold;text-shadow:0 0 20px #ff0000">GAME OVER</div><div style="color:#fff;font-size:18px;margin-top:20px">Press R to restart</div>'
+    document.body.appendChild(el)
+  }
+
+  hideGameOver(): void {
+    document.getElementById('game-over')?.remove()
+  }
+
   hide(): void {
     document.getElementById('hud')?.remove()
   }

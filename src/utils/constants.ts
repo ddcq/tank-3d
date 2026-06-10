@@ -9,3 +9,9 @@ export const JUMP_FORCE = 6
 export const MOUSE_SENSITIVITY = 0.002
 export const CAMERA_DISTANCE = 5
 export const CAMERA_SMOOTH = 4
+
+export const BONUS_SPAWN_CHANCE = 0.12
+export const BONUS_SPEED_Z = 8
+export const BONUS_COLLECT_RADIUS = 0.8
+export const BONUS_MAX_Z = 15
+export const EXPLOSION_RADIUS_INCREASE = 0.5

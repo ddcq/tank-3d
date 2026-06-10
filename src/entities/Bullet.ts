@@ -12,6 +12,7 @@ export class Bullet extends Entity {
   hitGround = false
   private life = 8
   readonly radius: number
+  attractionLevel = 0
 
   constructor(
     position: THREE.Vector3,

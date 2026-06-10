@@ -2,11 +2,24 @@ import * as THREE from 'three'
 import { EntityManager } from '../entities/EntityManager'
 import { Bullet } from '../entities/Bullet'
 import { EnemySoldier } from '../entities/EnemySoldier'
+import { EXPLOSION_RADIUS_INCREASE } from '../utils/constants'
 
-const EXPLOSION_RADIUS = 5
-const EXPLOSION_RADIUS_SQ = EXPLOSION_RADIUS * EXPLOSION_RADIUS
+const BASE_EXPLOSION_RADIUS = 5
 
 export class PhysicsSystem {
+  private radiusBonus = 0
+
+  get currentRadius(): number { return BASE_EXPLOSION_RADIUS + this.radiusBonus }
+  private get currentRadiusSq(): number { return this.currentRadius * this.currentRadius }
+
+  addRadiusBonus(): void {
+    this.radiusBonus += EXPLOSION_RADIUS_INCREASE
+  }
+
+  resetRadius(): void {
+    this.radiusBonus = 0
+  }
+
   update(_dt: number, em: EntityManager, formation: EnemySoldier[], onHit?: (pos: THREE.Vector3) => void, onExplosion?: (pos: THREE.Vector3) => void): void {
     const all = em.getAll()
     const bullets = all.filter((e): e is Bullet => e instanceof Bullet)
@@ -43,9 +56,9 @@ export class PhysicsSystem {
           const dx2 = explosionPos.x - ep.x
           const dy2 = explosionPos.y - ep.y
           const dz2 = explosionPos.z - ep.z
-          if (dx2 * dx2 + dy2 * dy2 + dz2 * dz2 < EXPLOSION_RADIUS_SQ) {
-            enemy.hit()
-            onHit?.(ep.clone())
+          if (dx2 * dx2 + dy2 * dy2 + dz2 * dz2 < this.currentRadiusSq) {
+            const died = enemy.hit()
+            if (died) onHit?.(ep.clone())
           }
         }
         bullet.active = false

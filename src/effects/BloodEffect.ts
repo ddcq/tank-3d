@@ -12,8 +12,10 @@ export class BloodEffect {
   private age = 0
   private _done = false
   private origin: THREE.Vector3
+  private scene: THREE.Scene
 
   constructor(scene: THREE.Scene, origin: THREE.Vector3) {
+    this.scene = scene
     this.origin = origin.clone()
     this.positions = new Float32Array(PARTICLE_COUNT * 3)
     this.geometry = new THREE.BufferGeometry()
@@ -75,6 +77,7 @@ export class BloodEffect {
   }
 
   dispose(): void {
+    this.scene.remove(this.points)
     this.points.geometry.dispose()
     ;(this.points.material as THREE.Material).dispose()
   }

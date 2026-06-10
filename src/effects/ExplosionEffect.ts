@@ -7,8 +7,10 @@ export class ExplosionEffect {
   private age = 0
   private _done = false
   private maxRadius: number
+  private scene: THREE.Scene
 
   constructor(scene: THREE.Scene, origin: THREE.Vector3, radius: number) {
+    this.scene = scene
     this.maxRadius = radius
     this.group = new THREE.Group()
     this.group.position.set(origin.x, 0.02, origin.z)
@@ -73,6 +75,7 @@ export class ExplosionEffect {
   }
 
   dispose(): void {
+    this.scene.remove(this.group)
     for (const child of this.group.children) {
       const mesh = child as THREE.Mesh
       mesh.geometry.dispose()

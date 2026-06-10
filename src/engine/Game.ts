@@ -8,10 +8,14 @@ import { EntityManager } from '../entities/EntityManager'
 import { PhysicsSystem } from '../physics/PhysicsSystem'
 import { HUD } from '../ui/HUD'
 import { FormationController } from '../formation/FormationController'
-import { EnemySoldier } from '../entities/EnemySoldier'
+import { EnemySoldier, SoldierType } from '../entities/EnemySoldier'
 import { HeadTrackingSystemImpl } from '../systems/headTracking/HeadTrackingSystem'
 import { BloodEffect } from '../effects/BloodEffect'
 import { ExplosionEffect } from '../effects/ExplosionEffect'
+import { BonusPickup, BonusType } from '../entities/BonusPickup'
+import { Bullet } from '../entities/Bullet'
+import { EnemyBullet } from '../entities/EnemyBullet'
+import { BONUS_SPAWN_CHANCE, BONUS_COLLECT_RADIUS } from '../utils/constants'
 
 interface GameState {
   score: number
@@ -41,10 +45,13 @@ export class Game {
   private clock = new THREE.Clock()
   private running = false
   private rafId = 0
+  private invincibleTimer = 0
+  private readonly INVINCIBLE_DURATION = 1.0
   private bloodEffects: BloodEffect[] = []
   private explosionEffects: ExplosionEffect[] = []
 
   private bloodPools: { mesh: THREE.Mesh; age: number; done: boolean }[] = []
+  private bonusPickups: BonusPickup[] = []
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene()
@@ -152,23 +159,34 @@ export class Game {
     const spacing = 1.2
     const startX = -(cols - 1) * spacing / 2
     
-    this.formationCtrl.totalEnemies = cols * rows
     this.state.enemyFormation = []
+
+    const soldierHp = 1 + Math.floor(waveIndex / 3)
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const x = startX + col * spacing
-        // Spawn enemies far away, on the road surface, facing tank (z=0)
         const z = -60 - row * spacing * 1.5
-        
+
+        let type = SoldierType.Standard
+        const rand = Math.random()
+        if (waveIndex >= 7) {
+          if (rand < 0.25) type = SoldierType.Rapid
+          else if (rand < 0.5) type = SoldierType.Heavy
+          else type = SoldierType.Standard
+        } else if (waveIndex >= 4) {
+          if (rand < 0.3) type = SoldierType.Heavy
+        }
+
         const soldier = new EnemySoldier(
           x,
           z,
           row,
-          col
+          col,
+          soldierHp,
+          type
         )
         
-        // Make soldiers face towards player (tank position is at z=0)  
         soldier.mesh.rotation.y = Math.PI
         
         this.scene.add(soldier.mesh)
@@ -176,9 +194,28 @@ export class Game {
       }
     }
 
-    this.formationCtrl.moveSpeed = 2.0 + waveIndex * 0.5
-    this.formationCtrl.moveSpeedZ = 3.0 + waveIndex * 0.5
-    this.formationCtrl.fireInterval = Math.max(0.2, 1.0 - waveIndex * 0.1)
+    if (waveIndex >= 3) {
+      const flankCount = Math.min(4, Math.floor(waveIndex / 2))
+      for (let i = 0; i < flankCount; i++) {
+        const side = i % 2 === 0 ? 1 : -1
+        const fx = side * (12 + Math.random() * 3)
+        const fz = -50 - i * 5
+        let fType = SoldierType.Standard
+        if (waveIndex >= 7 && Math.random() < 0.3) fType = SoldierType.Rapid
+        const flanker = new EnemySoldier(fx, fz, -1, -1, soldierHp, fType)
+        flanker.isFlanker = true
+        flanker.mesh.rotation.y = Math.PI
+        this.scene.add(flanker.mesh)
+        this.state.enemyFormation.push(flanker)
+      }
+    }
+
+    this.formationCtrl.totalEnemies = this.state.enemyFormation.length
+    this.formationCtrl.formationBroken = false
+    this.formationCtrl.moveSpeed = Math.min(8, 2.0 + waveIndex * 0.5)
+    this.formationCtrl.moveSpeedZ = Math.min(10, 3.0 + waveIndex * 0.5)
+    this.formationCtrl.fireInterval = Math.max(0.2, Math.min(1.0, 1.0 - waveIndex * 0.1))
+    this.formationCtrl.bulletSpeed = Math.max(-15, -(8 + waveIndex * 0.5))
   }
 
   update(dt: number): void {
@@ -197,6 +234,38 @@ export class Game {
     
     this.entities.update(dt)
 
+    for (const entity of this.entities.getAll()) {
+      if (!(entity instanceof Bullet) || !entity.isPlayerBullet || entity.hitGround) continue
+      const level = entity.attractionLevel
+      if (level <= 0) continue
+
+      let nearest: EnemySoldier | null = null
+      let nearestDistSq = Infinity
+      const bp = entity.mesh.position
+      for (const enemy of this.state.enemyFormation) {
+        if (!enemy.active || enemy.isDying) continue
+        const ep = enemy.mesh.position
+        const dx = bp.x - ep.x
+        const dz = bp.z - ep.z
+        const distSq = dx * dx + dz * dz
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq
+          nearest = enemy
+        }
+      }
+
+      if (nearest) {
+        const toTarget = new THREE.Vector3()
+          .copy(nearest.mesh.position)
+          .sub(bp)
+        toTarget.y = 0
+        toTarget.normalize()
+        const strength = level * 3 * dt
+        entity.velocity.x += toTarget.x * strength
+        entity.velocity.z += toTarget.z * strength
+      }
+    }
+
     const time = this.clock.getElapsedTime()
     for (const s of this.state.enemyFormation) {
       s.update(dt, time)
@@ -205,6 +274,15 @@ export class Game {
     this.physics.update(dt, this.entities, this.state.enemyFormation, (pos) => {
       this.state.score++
       this.hud.update(this.state.score, this.state.wave, this.state.lives)
+
+      if (Math.random() < BONUS_SPAWN_CHANCE) {
+        const types: BonusType[] = ['radius', 'multishoot', 'attraction', 'shield']
+        const type = types[Math.floor(Math.random() * types.length)]
+        const bonus = new BonusPickup(pos, type)
+        this.scene.add(bonus.mesh)
+        this.bonusPickups.push(bonus)
+      }
+
       this.bloodEffects.push(new BloodEffect(this.scene, pos))
       const poolGeo = new THREE.CircleGeometry(0.5, 12)
       poolGeo.rotateX(-Math.PI / 2)
@@ -219,8 +297,34 @@ export class Game {
       this.scene.add(pool)
       this.bloodPools.push({ mesh: pool, age: 0, done: false })
     }, (pos) => {
-      this.explosionEffects.push(new ExplosionEffect(this.scene, pos, 5))
+      this.explosionEffects.push(new ExplosionEffect(this.scene, pos, this.physics.currentRadius))
     })
+
+    const tPos = this.player.position
+    for (const entity of this.entities.getAll()) {
+      if (!(entity instanceof EnemyBullet) || !entity.active) continue
+      const bp = entity.mesh.position
+      const dx = bp.x - tPos.x
+      const dz = bp.z - tPos.z
+      if (dx * dx + dz * dz < 1.5 * 1.5) {
+        entity.active = false
+        if (this.invincibleTimer <= 0) {
+          if (this.player.shieldActive) {
+            this.player.shieldActive = false
+            this.explosionEffects.push(new ExplosionEffect(this.scene, tPos.clone(), 1.5))
+          } else {
+            this.state.lives--
+            this.hud.update(this.state.score, this.state.wave, this.state.lives)
+            this.invincibleTimer = this.INVINCIBLE_DURATION
+            this.explosionEffects.push(new ExplosionEffect(this.scene, tPos.clone(), this.physics.currentRadius * 0.5))
+            if (this.state.lives <= 0) {
+              this.state.gameOver = true
+              this.hud.showGameOver()
+            }
+          }
+        }
+      }
+    }
 
     for (const entity of this.entities.getAll()) {
       if (!entity.active) {
@@ -272,6 +376,40 @@ export class Game {
       }
     }
 
+    const tankPos = this.player.position
+    for (let i = this.bonusPickups.length - 1; i >= 0; i--) {
+      const bonus = this.bonusPickups[i]
+      bonus.update(dt)
+
+      const dx = bonus.mesh.position.x - tankPos.x
+      const dz = bonus.mesh.position.z - tankPos.z
+      if (dx * dx + dz * dz < BONUS_COLLECT_RADIUS * BONUS_COLLECT_RADIUS) {
+        if (bonus.bonusType === 'radius') {
+          this.physics.addRadiusBonus()
+        } else if (bonus.bonusType === 'multishoot') {
+          this.player.multishootLevel++
+        } else if (bonus.bonusType === 'shield') {
+          this.player.shieldActive = true
+        } else {
+          this.player.attractionLevel++
+        }
+        bonus.active = false
+      }
+
+      if (!bonus.active) {
+        this.scene.remove(bonus.mesh)
+        this.bonusPickups.splice(i, 1)
+      }
+    }
+
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer -= dt
+      this.player.tank.group.visible = Math.floor(this.invincibleTimer * 10) % 2 === 0
+      if (this.invincibleTimer <= 0) {
+        this.player.tank.group.visible = true
+      }
+    }
+
     if (this.state.enemyFormation.length === 0) {
       this.state.wave++
       this.spawnWave(this.state.wave)
@@ -284,6 +422,10 @@ export class Game {
   }
 
   resetGame(): void {
+    this.invincibleTimer = 0
+    this.player.tank.group.visible = true
+    this.hud.hideGameOver()
+
     for (const e of this.state.enemyFormation) {
       this.scene.remove(e.mesh)
     }
@@ -310,6 +452,14 @@ export class Game {
       ;(pool.mesh.material as THREE.Material).dispose()
     }
     this.bloodPools = []
+    for (const bonus of this.bonusPickups) {
+      this.scene.remove(bonus.mesh)
+    }
+    this.bonusPickups = []
+    this.player.multishootLevel = 0
+    this.player.attractionLevel = 0
+    this.player.shieldActive = false
+    this.physics.resetRadius()
     this.entities.clear()
     this.formationCtrl.clearFormation()
     

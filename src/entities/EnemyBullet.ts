@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { EntityManager } from '../entities/EntityManager'
 import { Entity } from './Entity'
+import { SoldierType } from './EnemySoldier'
 
 export class EnemyBullet extends Entity {
   isPlayerBullet = false
@@ -9,11 +10,18 @@ export class EnemyBullet extends Entity {
   lifeTime: number = 2.5
   private age: number = 0
 
-  constructor(x: number, z: number, em: EntityManager) {
-    const geometry = new THREE.CylinderGeometry(0.1, 0.1, 1.2, 8)
+  constructor(x: number, z: number, em: EntityManager, type: SoldierType = SoldierType.Standard, speed: number = -8) {
+    const isHeavy = type === SoldierType.Heavy
+
+    const geometry = new THREE.CylinderGeometry(
+      isHeavy ? 0.18 : 0.1,
+      isHeavy ? 0.18 : 0.1,
+      isHeavy ? 1.6 : 1.2,
+      8
+    )
     const material = new THREE.MeshStandardMaterial({ 
-      color: 0xff4444,
-      emissive: 0xff0000,
+      color: isHeavy ? 0xff8800 : 0xff4444,
+      emissive: isHeavy ? 0xff4400 : 0xff0000,
       emissiveIntensity: 0.5
     })
     
@@ -22,6 +30,13 @@ export class EnemyBullet extends Entity {
     mesh.position.set(x, 1, z)
     
     super(mesh)
+    
+    if (isHeavy) {
+      this.radius = 0.5
+      this.bulletSpeed = -5
+    } else {
+      this.bulletSpeed = speed
+    }
     
     em.add(this)
   }
