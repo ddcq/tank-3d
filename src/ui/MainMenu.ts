@@ -55,7 +55,7 @@ export class MainMenu {
       'text-shadow:0 0 30px rgba(100,200,255,0.3)',
       'letter-spacing:4px',
     ].join(';')
-    title.textContent = 'TANK 3D'
+    title.textContent = 'HeadGames'
     this.container.appendChild(title)
 
     const subtitle = document.createElement('div')

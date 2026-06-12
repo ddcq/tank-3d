@@ -1,14 +1,17 @@
 import * as THREE from 'three'
+import { GameBase } from '../../core/GameBase'
 import { generateMaze } from './MazeGenerator'
 import { MazeRenderer } from './MazeRenderer'
 import { MazePlayerController, PlayerState } from './MazePlayerController'
 import { MazeMinimap } from './MazeMinimap'
-import { HeadTrackingSystemImpl } from '../systems/headTracking/HeadTrackingSystem'
-import { AudioManager } from '../effects/AudioManager'
-import { MainMenu } from '../ui/MainMenu'
+import { HeadTrackingSystemImpl } from '../../systems/headTracking/HeadTrackingSystem'
+import { AudioManager } from '../../systems/audio/AudioManager'
+import { MainMenu } from '../../ui/MainMenu'
 
-export class MazeGame {
-  private readonly container: HTMLElement
+export class MazeGame extends GameBase {
+  readonly id = 'maze'
+  readonly label = 'Labyrinthe 3D'
+
   private scene!: THREE.Scene
   private renderer!: THREE.WebGLRenderer
   private camera!: THREE.PerspectiveCamera
@@ -25,10 +28,6 @@ export class MazeGame {
   private audioInitialized = false
   private smoothLookX = 0
   private smoothLookZ = 0
-
-  constructor(container: HTMLElement) {
-    this.container = container
-  }
 
   async init(): Promise<void> {
     this.scene = new THREE.Scene()
@@ -93,6 +92,10 @@ export class MazeGame {
   stop(): void {
     this.running = false
     cancelAnimationFrame(this.rafId)
+  }
+
+  dispose(): void {
+    this.stop()
     this.minimap.dispose()
     window.removeEventListener('resize', this.onResize)
     window.removeEventListener('keydown', this.onKeyDown)
@@ -176,10 +179,9 @@ export class MazeGame {
     if (choice === 'replay') {
       this.resetGame()
     } else {
-      this.renderer.dispose()
-      this.audio.dispose()
+      this.dispose()
       this.container.innerHTML = ''
-      window.dispatchEvent(new CustomEvent('maze-exit'))
+      window.dispatchEvent(new CustomEvent('headgame-exit'))
     }
   }
 
@@ -221,9 +223,9 @@ export class MazeGame {
     }
 
     if (e.key === 'Escape') {
-      this.stop()
+      this.dispose()
       this.container.innerHTML = ''
-      window.dispatchEvent(new CustomEvent('maze-exit'))
+      window.dispatchEvent(new CustomEvent('headgame-exit'))
       return
     }
 

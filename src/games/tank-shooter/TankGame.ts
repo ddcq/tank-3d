@@ -1,24 +1,25 @@
 import * as THREE from 'three'
+import { GameBase } from '../../core/GameBase'
 import { Renderer } from './Renderer'
-import { WorldManager } from '../world/WorldManager'
-import { Player } from '../player/Player'
-import { InputManager } from '../player/InputManager'
-import { CameraController } from '../player/CameraController'
-import { EntityManager } from '../entities/EntityManager'
-import { PhysicsSystem } from '../physics/PhysicsSystem'
-import { HUD } from '../ui/HUD'
-import { FormationController } from '../formation/FormationController'
-import { EnemySoldier, SoldierType } from '../entities/EnemySoldier'
-import { HeadTrackingSystemImpl } from '../systems/headTracking/HeadTrackingSystem'
-import { BloodEffect } from '../effects/BloodEffect'
-import { ExplosionEffect } from '../effects/ExplosionEffect'
-import { ShockwaveRing } from '../effects/ShockwaveRing'
-import { BonusPickup, BonusType } from '../entities/BonusPickup'
-import { Bullet } from '../entities/Bullet'
-import { EnemyBullet } from '../entities/EnemyBullet'
-import { MiniGrenade } from '../entities/MiniGrenade'
-import { Drone, DroneProjectile } from '../entities/Drone'
-import { BONUS_SPAWN_CHANCE, BONUS_COLLECT_RADIUS } from '../utils/constants'
+import { WorldManager } from '../../world/WorldManager'
+import { Player } from '../../player/Player'
+import { InputManager } from '../../player/InputManager'
+import { CameraController } from '../../player/CameraController'
+import { EntityManager } from '../../entities/EntityManager'
+import { PhysicsSystem } from '../../physics/PhysicsSystem'
+import { HUD } from '../../ui/HUD'
+import { FormationController } from '../../formation/FormationController'
+import { EnemySoldier, SoldierType } from '../../entities/EnemySoldier'
+import { HeadTrackingSystemImpl } from '../../systems/headTracking/HeadTrackingSystem'
+import { BloodEffect } from '../../effects/BloodEffect'
+import { ExplosionEffect } from '../../effects/ExplosionEffect'
+import { ShockwaveRing } from '../../effects/ShockwaveRing'
+import { BonusPickup, BonusType } from '../../entities/BonusPickup'
+import { Bullet } from '../../entities/Bullet'
+import { EnemyBullet } from '../../entities/EnemyBullet'
+import { MiniGrenade } from '../../entities/MiniGrenade'
+import { Drone, DroneProjectile } from '../../entities/Drone'
+import { BONUS_SPAWN_CHANCE, BONUS_COLLECT_RADIUS } from '../../utils/constants'
 
 interface GameState {
   score: number
@@ -29,7 +30,10 @@ interface GameState {
   gameOver: boolean
 }
 
-export class Game {
+export class TankGame extends GameBase {
+  readonly id = 'tank'
+  readonly label = 'Tank Shooter'
+
   public readonly scene: THREE.Scene
   public readonly renderer: Renderer
   public readonly camera: THREE.PerspectiveCamera
@@ -61,6 +65,7 @@ export class Game {
   private shockwaveRings: ShockwaveRing[] = []
 
   constructor(container: HTMLElement) {
+    super(container)
     this.scene = new THREE.Scene()
     this.renderer = new Renderer(container)
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000)
@@ -74,7 +79,7 @@ export class Game {
     this.world = new WorldManager(this.scene)
     this.hud = new HUD()
     this.headTracking = HeadTrackingSystemImpl.getInstance()
-    
+
     this.state = {
       score: 0,
       lives: 3,
@@ -95,7 +100,6 @@ export class Game {
     await this.world.init()
     await this.player.init()
 
-    // Initialize head tracking system after WebGL context is ready
     try {
       await this.headTracking.initialize({
         enabled: true,
@@ -108,17 +112,15 @@ export class Game {
     this.spawnWave(1)
     this.hud.show()
     this.state.gameActive = true
-    
+
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'r' || e.key === 'R') {
         if (!this.state.gameActive || this.state.gameOver) {
           this.resetGame()
         }
       }
-      
-      // Head tracking hotkeys
+
       if (e.key === 't' || e.key === 'T') {
-        // Toggle head tracking
         if (this.headTracking) {
           if (this.headTracking.getIsTracking()) {
             this.headTracking.disable();
@@ -127,16 +129,14 @@ export class Game {
           }
         }
       }
-      
+
       if (e.key === 'c' || e.key === 'C') {
-        // Calibrate head tracking
         if (this.headTracking) {
           this.headTracking.calibrate();
         }
       }
-      
+
       if (e.key === 'h' || e.key === 'H') {
-        // Recenter head tracking
         if (this.headTracking) {
           this.headTracking.recenter();
         }
@@ -153,6 +153,10 @@ export class Game {
   stop(): void {
     this.running = false
     cancelAnimationFrame(this.rafId)
+  }
+
+  dispose(): void {
+    this.stop()
     this.player.dispose()
     this.headTracking.dispose()
   }
@@ -165,7 +169,7 @@ export class Game {
     const rows = Math.min(8, 2 + Math.floor(waveIndex / 2))
     const spacing = 1.2
     const startX = -(cols - 1) * spacing / 2
-    
+
     this.state.enemyFormation = []
 
     const soldierHp = 1 + Math.floor(waveIndex / 3)
@@ -193,9 +197,9 @@ export class Game {
           soldierHp,
           type
         )
-        
+
         soldier.mesh.rotation.y = Math.PI
-        
+
         this.scene.add(soldier.mesh)
         this.state.enemyFormation.push(soldier)
       }
@@ -236,9 +240,9 @@ export class Game {
       this.entities.add(b)
       this.scene.add(b.mesh)
     })
-    
+
     this.world.update(dt, this.player.position)
-    
+
     this.entities.update(dt)
 
     for (const entity of this.entities.getAll()) {
@@ -277,7 +281,7 @@ export class Game {
     for (const s of this.state.enemyFormation) {
       s.update(dt, time)
     }
-    
+
     this.physics.update(dt, this.entities, this.state.enemyFormation, (pos) => {
       this.state.score++
       this.hud.update(this.state.score, this.state.wave, this.state.lives)
@@ -559,7 +563,7 @@ export class Game {
     }
 
     this.formationCtrl.update(dt, this.state.enemyFormation)
-    
+
     this.cameraCtrl.update(dt)
     this.renderer.render(this.scene, this.camera)
   }
@@ -580,7 +584,7 @@ export class Game {
       gameActive: true,
       gameOver: false
     }
-    
+
     for (const effect of this.bloodEffects) {
       effect.dispose()
     }
@@ -631,18 +635,18 @@ export class Game {
     this.physics.resetRadius()
     this.entities.clear()
     this.formationCtrl.clearFormation()
-    
+
     this.spawnWave(1)
     this.hud.update(this.state.score, this.state.wave, this.state.lives)
   }
 
   private tick = (): void => {
     if (!this.running) return
-    
+
     const dt = Math.min(this.clock.getDelta(), 0.05)
-    
+
     this.update(dt)
-    
+
     this.rafId = requestAnimationFrame(this.tick)
   }
 }

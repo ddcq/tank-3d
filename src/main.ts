@@ -1,27 +1,17 @@
 import './ui/styles.css'
+import { GameRegistry } from './core/GameRegistry'
+import { MazeGame } from './games/maze/MazeGame'
+import { TankGame } from './games/tank-shooter/TankGame'
 import { CalibrationScreen } from './ui/CalibrationScreen'
 import { MainMenu } from './ui/MainMenu'
 import { HeadTrackingSystemImpl } from './systems/headTracking/HeadTrackingSystem'
-import { Game } from './engine/Game'
-import { MazeGame } from './maze/MazeGame'
+
+GameRegistry.register('maze', 'Labyrinthe 3D', MazeGame)
+GameRegistry.register('tank', 'Tank Shooter', TankGame)
 
 async function runCalibration(): Promise<{ noseX: number; noseY: number }> {
   const screen = new CalibrationScreen()
   return screen.calibrate()
-}
-
-async function launchMazeGame(container: HTMLElement): Promise<void> {
-  const mazeGame = new MazeGame(container)
-  await mazeGame.init()
-  mazeGame.start()
-
-  await new Promise<void>(resolve => {
-    const onExit = () => {
-      window.removeEventListener('maze-exit', onExit)
-      resolve()
-    }
-    window.addEventListener('maze-exit', onExit)
-  })
 }
 
 async function main(): Promise<void> {
@@ -34,11 +24,11 @@ async function main(): Promise<void> {
   let choice: string
   do {
     const menu = new MainMenu()
-    choice = await menu.show(headTracking, [
-      { id: 'play', label: 'Lancer le jeu' },
+    const buttons = [
+      ...GameRegistry.getMenuButtons(),
       { id: 'recalibrate', label: 'Recalibrer' },
-      { id: 'game2', label: 'Labyrinthe 3D' },
-    ])
+    ]
+    choice = await menu.show(headTracking, buttons)
 
     if (choice === 'recalibrate') {
       const result = await runCalibration()
@@ -49,16 +39,8 @@ async function main(): Promise<void> {
   } while (choice === 'recalibrate')
 
   const container = document.getElementById('game')!
-
-  if (choice === 'game2') {
-    await launchMazeGame(container)
-    location.reload()
-    return
-  }
-
-  const game = new Game(container)
-  await game.init()
-  game.start()
+  await GameRegistry.launch(choice, container)
+  location.reload()
 }
 
 main().catch(console.error)
