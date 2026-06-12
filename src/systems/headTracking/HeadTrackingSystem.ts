@@ -14,10 +14,20 @@ export class HeadTrackingSystemImpl {
   private _mouthFire = false
   private animationId = 0
   private enabled = false
+  private baseNoseX = 0.5
+  private baseNoseY = 0.5
 
   async initialize(config?: Partial<{ enabled: boolean; maxFPS: number }>): Promise<void> {
     this.enabled = config?.enabled ?? true
     if (!this.enabled) return
+
+    if (this.faceLandmarker) {
+      if (!this._isTracking) {
+        this._isTracking = true
+        this.detectLoop()
+      }
+      return
+    }
 
     try {
       const vision = await FilesetResolver.forVisionTasks(
@@ -57,8 +67,8 @@ export class HeadTrackingSystemImpl {
       if (result.faceLandmarks && result.faceLandmarks.length > 0) {
         const face = result.faceLandmarks[0]
         const noseTip = face[0]
-        this._headYaw = Math.max(-1, Math.min(1, (noseTip.x - 0.5) * 8))
-        this._headPitch = Math.max(-1, Math.min(1, (0.5 - noseTip.y) * 4))
+        this._headYaw = Math.max(-1, Math.min(1, (noseTip.x - this.baseNoseX) * 8))
+        this._headPitch = Math.max(-1, Math.min(1, (this.baseNoseY - noseTip.y) * 4))
 
         let faceMinY = 1, faceMaxY = 0
         let lipMinY = 1, lipMaxY = 0
@@ -87,6 +97,10 @@ export class HeadTrackingSystemImpl {
 
   enable(): void { this.enabled = true; this._isTracking = true }
   disable(): void { this.enabled = false; this._isTracking = false }
+  setCalibrationOffset(noseX: number, noseY: number): void {
+    this.baseNoseX = noseX
+    this.baseNoseY = noseY
+  }
   calibrate(): void {}
   recenter(): void { this._headYaw = 0; this._headPitch = 0 }
 

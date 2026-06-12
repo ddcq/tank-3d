@@ -25,6 +25,10 @@ export class Player {
   private trajectoryPreview: TrajectoryPreview
   multishootLevel = 0
   attractionLevel = 0
+  scatterLevel = 0
+  droneCount = 0
+  shockwaveLevel = 0
+  shockwaveTimer = 0
   shieldActive = false
   private shieldMesh: THREE.Mesh
 
@@ -48,6 +52,13 @@ export class Player {
     this.shieldMesh.visible = false
     this.tank.group.add(this.shieldMesh)
   }
+
+  async init(): Promise<void> {
+    await this.tank.loadModel()
+  }
+
+  private aimHorizontal = new THREE.Vector3()
+  private forward = new THREE.Vector3(0, 0, -1)
 
   update(dt: number, headYaw: number = 0, headPitch: number = 0, onFireBullet?: (b: Bullet) => void): void {
     if (!this.input) return
@@ -86,6 +97,11 @@ export class Player {
       Math.sin(clampedPitch),
       -cp * Math.cos(clampedYaw),
     )
+
+    this.aimHorizontal.set(aimDir.x, 0, aimDir.z).normalize()
+    if (this.aimHorizontal.lengthSq() > 0.001) {
+      this.tank.turretGroup.quaternion.setFromUnitVectors(this.forward, this.aimHorizontal)
+    }
 
     const barrelPos = new THREE.Vector3()
     this.tank.barrel!.getWorldPosition(barrelPos)

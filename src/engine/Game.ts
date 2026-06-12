@@ -12,9 +12,12 @@ import { EnemySoldier, SoldierType } from '../entities/EnemySoldier'
 import { HeadTrackingSystemImpl } from '../systems/headTracking/HeadTrackingSystem'
 import { BloodEffect } from '../effects/BloodEffect'
 import { ExplosionEffect } from '../effects/ExplosionEffect'
+import { ShockwaveRing } from '../effects/ShockwaveRing'
 import { BonusPickup, BonusType } from '../entities/BonusPickup'
 import { Bullet } from '../entities/Bullet'
 import { EnemyBullet } from '../entities/EnemyBullet'
+import { MiniGrenade } from '../entities/MiniGrenade'
+import { Drone, DroneProjectile } from '../entities/Drone'
 import { BONUS_SPAWN_CHANCE, BONUS_COLLECT_RADIUS } from '../utils/constants'
 
 interface GameState {
@@ -52,6 +55,10 @@ export class Game {
 
   private bloodPools: { mesh: THREE.Mesh; age: number; done: boolean }[] = []
   private bonusPickups: BonusPickup[] = []
+  private miniGrenades: MiniGrenade[] = []
+  private drones: Drone[] = []
+  private droneProjectiles: DroneProjectile[] = []
+  private shockwaveRings: ShockwaveRing[] = []
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene()
@@ -86,7 +93,7 @@ export class Game {
     window.addEventListener('resize', onResize)
 
     await this.world.init()
-    this.scene.add(this.player.tank.group)
+    await this.player.init()
 
     // Initialize head tracking system after WebGL context is ready
     try {
@@ -276,7 +283,7 @@ export class Game {
       this.hud.update(this.state.score, this.state.wave, this.state.lives)
 
       if (Math.random() < BONUS_SPAWN_CHANCE) {
-        const types: BonusType[] = ['radius', 'multishoot', 'attraction', 'shield']
+        const types: BonusType[] = ['radius', 'multishoot', 'attraction', 'shield', 'scatter', 'drone', 'shockwave']
         const type = types[Math.floor(Math.random() * types.length)]
         const bonus = new BonusPickup(pos, type)
         this.scene.add(bonus.mesh)
@@ -298,6 +305,15 @@ export class Game {
       this.bloodPools.push({ mesh: pool, age: 0, done: false })
     }, (pos) => {
       this.explosionEffects.push(new ExplosionEffect(this.scene, pos, this.physics.currentRadius))
+      const scatter = this.player.scatterLevel
+      if (scatter > 0) {
+        const count = 2 + scatter
+        for (let i = 0; i < count; i++) {
+          const g = new MiniGrenade(pos)
+          this.scene.add(g.mesh)
+          this.miniGrenades.push(g)
+        }
+      }
     })
 
     const tPos = this.player.position
@@ -390,6 +406,20 @@ export class Game {
           this.player.multishootLevel++
         } else if (bonus.bonusType === 'shield') {
           this.player.shieldActive = true
+        } else if (bonus.bonusType === 'scatter') {
+          this.player.scatterLevel++
+        } else if (bonus.bonusType === 'drone') {
+          this.player.droneCount++
+          const drone = new Drone(
+            () => this.state.enemyFormation,
+            this.drones.length,
+            this.scene,
+          )
+          this.scene.add(drone.group)
+          this.drones.push(drone)
+        } else if (bonus.bonusType === 'shockwave') {
+          this.player.shockwaveLevel++
+          this.player.shockwaveTimer = 0
         } else {
           this.player.attractionLevel++
         }
@@ -399,6 +429,119 @@ export class Game {
       if (!bonus.active) {
         this.scene.remove(bonus.mesh)
         this.bonusPickups.splice(i, 1)
+      }
+    }
+
+    for (let i = this.miniGrenades.length - 1; i >= 0; i--) {
+      const g = this.miniGrenades[i]
+      g.update(dt)
+      if (g.exploded) {
+        this.scene.remove(g.mesh)
+        g.mesh.geometry.dispose()
+        ;(g.mesh.material as THREE.Material).dispose()
+        this.explosionEffects.push(new ExplosionEffect(this.scene, g.mesh.position, g.damageRadius))
+
+        for (const enemy of this.state.enemyFormation) {
+          if (!enemy.active || enemy.isDying) continue
+          const ep = enemy.mesh.position
+          const dx = g.mesh.position.x - ep.x
+          const dz = g.mesh.position.z - ep.z
+          if (dx * dx + dz * dz < g.damageRadius * g.damageRadius) {
+            const died = enemy.hit()
+            if (died) {
+              this.state.score++
+              this.hud.update(this.state.score, this.state.wave, this.state.lives)
+              this.bloodEffects.push(new BloodEffect(this.scene, ep.clone()))
+              const poolGeo = new THREE.CircleGeometry(0.5, 12)
+              poolGeo.rotateX(-Math.PI / 2)
+              const poolMat = new THREE.MeshStandardMaterial({
+                color: 0x660000,
+                transparent: true,
+                opacity: 0.6,
+                depthWrite: false,
+              })
+              const pool = new THREE.Mesh(poolGeo, poolMat)
+              pool.position.set(ep.x, 0.015, ep.z)
+              this.scene.add(pool)
+              this.bloodPools.push({ mesh: pool, age: 0, done: false })
+            }
+          }
+        }
+        this.miniGrenades.splice(i, 1)
+      }
+    }
+
+    const tankPosDrone = this.player.position
+    for (const drone of this.drones) {
+      const proj = drone.update(dt, tankPosDrone)
+      if (proj) {
+        this.scene.add(proj.mesh)
+        this.droneProjectiles.push(proj)
+      }
+    }
+
+    for (let i = this.droneProjectiles.length - 1; i >= 0; i--) {
+      const p = this.droneProjectiles[i]
+      p.update(dt)
+      if (p.hitEnemy) {
+        const died = p.hitEnemy.hit()
+        if (died) {
+          this.state.score++
+          this.hud.update(this.state.score, this.state.wave, this.state.lives)
+          this.bloodEffects.push(new BloodEffect(this.scene, p.hitEnemy.mesh.position.clone()))
+
+          if (Math.random() < BONUS_SPAWN_CHANCE) {
+            const types: BonusType[] = ['radius', 'multishoot', 'attraction', 'shield', 'scatter', 'drone', 'shockwave']
+            const type = types[Math.floor(Math.random() * types.length)]
+            const bonus = new BonusPickup(p.hitEnemy.mesh.position.clone(), type)
+            this.scene.add(bonus.mesh)
+            this.bonusPickups.push(bonus)
+          }
+        }
+      }
+      if (!p.active) {
+        this.scene.remove(p.mesh)
+        p.mesh.geometry.dispose()
+        ;(p.mesh.material as THREE.Material).dispose()
+        this.droneProjectiles.splice(i, 1)
+      }
+    }
+
+    if (this.player.shockwaveLevel > 0) {
+      this.player.shockwaveTimer += dt
+      const interval = Math.max(3, 6 - this.player.shockwaveLevel)
+      if (this.player.shockwaveTimer >= interval) {
+        this.player.shockwaveTimer = 0
+        const tPos = this.player.position
+        const ring = new ShockwaveRing(tPos)
+        this.scene.add(ring.mesh)
+        this.shockwaveRings.push(ring)
+
+        const pushRadius = 12
+        for (const enemy of this.state.enemyFormation) {
+          if (!enemy.active || enemy.isDying) continue
+          const dx = enemy.mesh.position.x - tPos.x
+          const dz = enemy.mesh.position.z - tPos.z
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist < pushRadius && dist > 0.01) {
+            const strength = 4 * (1 - dist / pushRadius)
+            const nx = dx / dist
+            const nz = dz / dist
+            enemy.mesh.position.x += nx * strength
+            enemy.mesh.position.z += nz * strength
+            enemy.shootCooldown = Math.max(enemy.shootCooldown, 1.5)
+          }
+        }
+      }
+    }
+
+    for (let i = this.shockwaveRings.length - 1; i >= 0; i--) {
+      const ring = this.shockwaveRings[i]
+      ring.update(dt)
+      if (ring.done) {
+        this.scene.remove(ring.mesh)
+        ring.dispose()
+        this.shockwaveRings.splice(i, 1)
       }
     }
 
@@ -415,7 +558,7 @@ export class Game {
       this.spawnWave(this.state.wave)
     }
 
-    this.formationCtrl.update(dt, this.state.enemyFormation, this.entities)
+    this.formationCtrl.update(dt, this.state.enemyFormation)
     
     this.cameraCtrl.update(dt)
     this.renderer.render(this.scene, this.camera)
@@ -456,8 +599,34 @@ export class Game {
       this.scene.remove(bonus.mesh)
     }
     this.bonusPickups = []
+    for (const g of this.miniGrenades) {
+      this.scene.remove(g.mesh)
+      g.mesh.geometry.dispose()
+      ;(g.mesh.material as THREE.Material).dispose()
+    }
+    this.miniGrenades = []
+    for (const p of this.droneProjectiles) {
+      this.scene.remove(p.mesh)
+      p.mesh.geometry.dispose()
+      ;(p.mesh.material as THREE.Material).dispose()
+    }
+    this.droneProjectiles = []
+    for (const drone of this.drones) {
+      this.scene.remove(drone.group)
+      drone.dispose(this.scene)
+    }
+    this.drones = []
+    for (const ring of this.shockwaveRings) {
+      this.scene.remove(ring.mesh)
+      ring.dispose()
+    }
+    this.shockwaveRings = []
     this.player.multishootLevel = 0
     this.player.attractionLevel = 0
+    this.player.scatterLevel = 0
+    this.player.droneCount = 0
+    this.player.shockwaveLevel = 0
+    this.player.shockwaveTimer = 0
     this.player.shieldActive = false
     this.physics.resetRadius()
     this.entities.clear()

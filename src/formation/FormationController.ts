@@ -1,6 +1,4 @@
-import { EntityManager } from '../entities/EntityManager'
-import { EnemySoldier, SoldierType } from '../entities/EnemySoldier'
-import { EnemyBullet } from '../entities/EnemyBullet'
+import { EnemySoldier } from '../entities/EnemySoldier'
 
 export class FormationController {
   public dir: number = -1
@@ -16,7 +14,7 @@ export class FormationController {
     this.dir = -1
   }
 
-  update(dt: number, formation: EnemySoldier[], em: EntityManager): void {
+  update(dt: number, formation: EnemySoldier[]): void {
     this.timerAccumulator += dt
 
     const alive = formation.filter(s => !s.isDying)
@@ -41,9 +39,13 @@ export class FormationController {
       }
 
       if (this.formationBroken) {
-        soldier.mesh.position.z += this.moveSpeedZ * soldier.speedMultiplier * 1.5 * dt
+        soldier.mesh.position.z += this.moveSpeedZ * soldier.speedMultiplier * dt
         const dx = soldier.targetX - soldier.mesh.position.x
-        soldier.mesh.position.x += Math.sign(dx) * Math.min(Math.abs(dx), this.moveSpeed * 1.5 * dt)
+        if (Math.abs(dx) < 0.5) {
+          soldier.targetX = (Math.random() - 0.5) * 14
+        }
+        const maxLateral = this.moveSpeed * 1.2 * dt
+        soldier.mesh.position.x += Math.sign(dx) * Math.min(Math.abs(dx), maxLateral)
         continue
       }
 
@@ -63,34 +65,7 @@ export class FormationController {
       this.dir *= -1
     }
 
-    const interval = Math.max(0.2, this.fireInterval - (this.totalEnemies - alive.length) * 0.06)
-    if (this.timerAccumulator >= interval && alive.length > 0) {
-      this.timerAccumulator = 0
-      
-      const shooterIndex = Math.floor(Math.random() * alive.length)
-      const shooter = alive[shooterIndex]
-      
-      if (shooter.soldierType === SoldierType.Rapid) {
-        const offsets = [-0.4, 0, 0.4]
-        for (const offset of offsets) {
-          new EnemyBullet(
-            shooter.mesh.position.x + offset,
-            shooter.mesh.position.z - 1.5,
-            em,
-            SoldierType.Rapid,
-            this.bulletSpeed
-          )
-        }
-      } else {
-        new EnemyBullet(
-          shooter.mesh.position.x,
-          shooter.mesh.position.z - 1.5,
-          em,
-          shooter.soldierType,
-          this.bulletSpeed
-        )
-      }
-    }
+    // Enemy shooting disabled
   }
 
   private _totalEnemies: number = 15

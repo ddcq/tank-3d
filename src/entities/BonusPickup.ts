@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { Entity } from './Entity'
 import { BONUS_SPEED_Z, BONUS_MAX_Z } from '../utils/constants'
 
-export type BonusType = 'radius' | 'multishoot' | 'attraction' | 'shield'
+export type BonusType = 'radius' | 'multishoot' | 'attraction' | 'shield' | 'scatter' | 'drone' | 'shockwave'
 
 export class BonusPickup extends Entity {
   readonly bonusType: BonusType
@@ -17,9 +17,9 @@ export class BonusPickup extends Entity {
     super(group)
     this.bonusType = type
 
-    const coreColor = type === 'multishoot' ? 0x00ccff : type === 'attraction' ? 0x44ff44 : type === 'shield' ? 0xaa44ff : 0xffd700
-    const emissiveColor = type === 'multishoot' ? 0x0088cc : type === 'attraction' ? 0x22aa22 : type === 'shield' ? 0x6622cc : 0xffa500
-    const ringColor = type === 'multishoot' ? 0x44ddff : type === 'attraction' ? 0x66ff66 : type === 'shield' ? 0xcc66ff : 0xffaa00
+    const coreColor = type === 'multishoot' ? 0x00ccff : type === 'attraction' ? 0x44ff44 : type === 'shield' ? 0xaa44ff : type === 'scatter' ? 0xff8800 : type === 'drone' ? 0x00ddcc : type === 'shockwave' ? 0x4488ff : 0xffd700
+    const emissiveColor = type === 'multishoot' ? 0x0088cc : type === 'attraction' ? 0x22aa22 : type === 'shield' ? 0x6622cc : type === 'scatter' ? 0xcc5500 : type === 'drone' ? 0x00aa88 : type === 'shockwave' ? 0x2266dd : 0xffa500
+    const ringColor = type === 'multishoot' ? 0x44ddff : type === 'attraction' ? 0x66ff66 : type === 'shield' ? 0xcc66ff : type === 'scatter' ? 0xffaa44 : type === 'drone' ? 0x44eedd : type === 'shockwave' ? 0x66aaff : 0xffaa00
 
     const coreGeo = new THREE.IcosahedronGeometry(0.2, 0)
     const coreMat = new THREE.MeshStandardMaterial({

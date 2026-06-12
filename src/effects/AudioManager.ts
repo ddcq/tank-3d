@@ -1,0 +1,245 @@
+export class AudioManager {
+  private ctx: AudioContext | null = null
+  private ambientNodes: AudioNode[] = []
+  private ambientGain: GainNode | null = null
+
+  init(): void {
+    if (this.ctx) return
+    try {
+      this.ctx = new AudioContext()
+    } catch {
+      // Web Audio API not available
+    }
+  }
+
+  private ctxOrNull(): AudioContext | null {
+    if (!this.ctx) return null
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume()
+    }
+    return this.ctx
+  }
+
+  private noise(ctx: AudioContext, dur: number): AudioBufferSourceNode {
+    const len = ctx.sampleRate * dur
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    return src
+  }
+
+  startAmbient(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx || this.ambientGain) return
+
+    const masterGain = ctx.createGain()
+    masterGain.gain.setValueAtTime(0.035, ctx.currentTime)
+    masterGain.connect(ctx.destination)
+    this.ambientGain = masterGain
+
+    const osc1 = ctx.createOscillator()
+    osc1.type = 'sawtooth'
+    osc1.frequency.setValueAtTime(28, ctx.currentTime)
+    osc1.frequency.linearRampToValueAtTime(30, ctx.currentTime + 3)
+    const g1 = ctx.createGain()
+    g1.gain.setValueAtTime(0.5, ctx.currentTime)
+    osc1.connect(g1)
+    g1.connect(masterGain)
+    osc1.start()
+    this.ambientNodes.push(osc1, g1)
+
+    const osc2 = ctx.createOscillator()
+    osc2.type = 'sawtooth'
+    osc2.frequency.setValueAtTime(60, ctx.currentTime)
+    osc2.frequency.linearRampToValueAtTime(62, ctx.currentTime + 3)
+    const g2 = ctx.createGain()
+    g2.gain.setValueAtTime(0.25, ctx.currentTime)
+    osc2.connect(g2)
+    g2.connect(masterGain)
+    osc2.start()
+    this.ambientNodes.push(osc2, g2)
+
+    const osc3 = ctx.createOscillator()
+    osc3.type = 'square'
+    osc3.frequency.setValueAtTime(15, ctx.currentTime)
+    const g3 = ctx.createGain()
+    g3.gain.setValueAtTime(0.1, ctx.currentTime)
+    osc3.connect(g3)
+    g3.connect(masterGain)
+    osc3.start()
+    this.ambientNodes.push(osc3, g3)
+
+    const noiseSrc = this.noise(ctx, 4)
+    noiseSrc.loop = true
+    const ng = ctx.createGain()
+    const np = ctx.createBiquadFilter()
+    np.type = 'lowpass'
+    np.frequency.setValueAtTime(200, ctx.currentTime)
+    ng.gain.setValueAtTime(0.15, ctx.currentTime)
+    noiseSrc.connect(np)
+    np.connect(ng)
+    ng.connect(masterGain)
+    noiseSrc.start()
+    this.ambientNodes.push(noiseSrc, ng, np)
+  }
+
+  stopAmbient(): void {
+    const ctx = this.ctxOrNull()
+    if (ctx && this.ambientGain) {
+      this.ambientGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8)
+    }
+    setTimeout(() => {
+      for (const n of this.ambientNodes) {
+        if (n instanceof AudioScheduledSourceNode) {
+          try { n.stop() } catch { /* already stopped */ }
+        }
+        n.disconnect()
+      }
+      this.ambientNodes = []
+      this.ambientGain = null
+    }, 1000)
+  }
+
+  playStep(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(60, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(25, ctx.currentTime + 0.08)
+    gain.gain.setValueAtTime(0.35, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.1)
+
+    const n = this.noise(ctx, 0.05)
+    const ng = ctx.createGain()
+    const np = ctx.createBiquadFilter()
+    np.type = 'lowpass'
+    np.frequency.setValueAtTime(800, ctx.currentTime)
+    ng.gain.setValueAtTime(0.12, ctx.currentTime)
+    ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05)
+    n.connect(np)
+    np.connect(ng)
+    ng.connect(ctx.destination)
+    n.start(ctx.currentTime)
+    n.stop(ctx.currentTime + 0.05)
+  }
+
+  playTurn(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const bpf = ctx.createBiquadFilter()
+    bpf.type = 'bandpass'
+    bpf.frequency.setValueAtTime(200, ctx.currentTime)
+    bpf.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.15)
+    bpf.Q.setValueAtTime(5, ctx.currentTime)
+
+    const n = this.noise(ctx, 0.15)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+    n.connect(bpf)
+    bpf.connect(gain)
+    gain.connect(ctx.destination)
+    n.start(ctx.currentTime)
+    n.stop(ctx.currentTime + 0.15)
+
+    const osc = ctx.createOscillator()
+    const og = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(120, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.12)
+    og.gain.setValueAtTime(0.06, ctx.currentTime)
+    og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+    osc.connect(og)
+    og.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.12)
+  }
+
+  playConfirm(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(300, ctx.currentTime)
+    osc.frequency.linearRampToValueAtTime(500, ctx.currentTime + 0.06)
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.04)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.12)
+  }
+
+  playWin(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const notes = [130, 165, 196, 261]
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      const t = ctx.currentTime + i * 0.2
+      osc.frequency.setValueAtTime(freq, t)
+      gain.gain.setValueAtTime(0, t)
+      gain.gain.linearRampToValueAtTime(0.15, t + 0.06)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(t)
+      osc.stop(t + 0.4)
+    })
+  }
+
+  playBlocked(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(40, ctx.currentTime)
+    gain.gain.setValueAtTime(0.12, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.3)
+  }
+
+  playReset(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(300, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.3)
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.35)
+  }
+
+  dispose(): void {
+    this.stopAmbient()
+    this.ctx?.close()
+    this.ctx = null
+  }
+}

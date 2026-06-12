@@ -29,6 +29,9 @@ export class Environment {
 
     this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.008)
 
-    this.scene.background = new THREE.Color(0x87ceeb)
+    const texLoader = new THREE.TextureLoader()
+    texLoader.load('/textures/sky.jpg', (tex) => {
+      this.scene.background = tex
+    })
   }
 }

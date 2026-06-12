@@ -9,23 +9,22 @@ export class Terrain {
   constructor() {
     this.mesh = new THREE.Group()
 
-    // Road (wide avenue)
+    const texLoader = new THREE.TextureLoader()
+    const concreteTex = texLoader.load('/textures/concrete.jpg')
+    concreteTex.wrapS = concreteTex.wrapT = THREE.RepeatWrapping
+    concreteTex.repeat.set(2, 22)
+
     const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH, 1, 1)
     roadGeo.rotateX(-Math.PI / 2)
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.95 })
+    const roadMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.95 })
     const road = new THREE.Mesh(roadGeo, roadMat)
     road.position.y = 0
     road.receiveShadow = true
     this.mesh.add(road)
 
-    // Road center line (dashed white) - these will be part of scrolling terrain sections now
-    // We'll handle the center lines in WorldManager instead
-    // The road center lines should be included within each terrain section
-
-    // Sidewalks
     const sidewalkHeight = 0.15
     const sidewalkGeo = new THREE.BoxGeometry(2, sidewalkHeight, ROAD_LENGTH)
-    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x8c8c8c, roughness: 0.9 })
+    const sidewalkMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.9 })
 
     const leftSidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat)
     leftSidewalk.position.set(-ROAD_WIDTH / 2 - 1, sidewalkHeight / 2, 0)
@@ -39,7 +38,6 @@ export class Terrain {
   }
 
   heightAt(_x: number, _z: number): number {
-    // For a flat terrain, always return 0
     return 0
   }
 
