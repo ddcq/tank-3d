@@ -6,6 +6,7 @@ const WALL_H = 3
 const HALF = CELL / 2
 const WALL_THICK = 0.15
 const LAMP_DIST = 5.5
+const LAMP_RANGE = 3
 
 export class MazeRenderer {
   readonly group = new THREE.Group()
@@ -14,9 +15,16 @@ export class MazeRenderer {
   private startMarker!: THREE.Mesh
   private endMarker!: THREE.Mesh
   private exitGlow!: THREE.PointLight
-  private lampLights: THREE.PointLight[] = []
-  private lampPhases: number[] = []
-  private lampSpeeds: number[] = []
+  private lampPhase = 0
+  private lampSpeed = 3
+  private lampSlots: {
+    col: number
+    row: number
+    x: number
+    y: number
+    z: number
+    light: THREE.PointLight | null
+  }[] = []
 
   constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) {}
 
@@ -132,14 +140,7 @@ export class MazeRenderer {
         bulb.position.set(x, y, z)
         this.group.add(bulb)
 
-        if (openCount === 4) {
-          const light = new THREE.PointLight(0xffddaa, 2, LAMP_DIST, 2)
-          light.position.set(x, y, z)
-          this.group.add(light)
-          this.lampLights.push(light)
-          this.lampPhases.push(Math.random() * Math.PI * 2)
-          this.lampSpeeds.push(2 + Math.random() * 3)
-        }
+        this.lampSlots.push({ col, row, x, y, z, light: null })
       }
     }
   }
@@ -214,11 +215,30 @@ export class MazeRenderer {
     this.group.add(this.exitGlow)
   }
 
+  updatePlayerPosition(playerCol: number, playerRow: number): void {
+    for (const slot of this.lampSlots) {
+      const dist = Math.max(Math.abs(slot.col - playerCol), Math.abs(slot.row - playerRow))
+      const shouldBeOn = dist <= LAMP_RANGE
+
+      if (shouldBeOn && !slot.light) {
+        const light = new THREE.PointLight(0xffddaa, 2, LAMP_DIST, 2)
+        light.position.set(slot.x, slot.y, slot.z)
+        this.group.add(light)
+        slot.light = light
+      } else if (!shouldBeOn && slot.light) {
+        this.group.remove(slot.light)
+        slot.light.dispose?.()
+        slot.light = null
+      }
+    }
+  }
+
   updateLamps(dt: number): void {
-    for (let i = 0; i < this.lampLights.length; i++) {
-      this.lampPhases[i] += dt * this.lampSpeeds[i]
-      const flicker = 0.85 + Math.sin(this.lampPhases[i]) * 0.15
-      this.lampLights[i].intensity = 1.2 * flicker
+    this.lampPhase += dt * this.lampSpeed
+    const flicker = 0.85 + Math.sin(this.lampPhase) * 0.15
+    const intensity = 1.2 * flicker
+    for (const slot of this.lampSlots) {
+      if (slot.light) slot.light.intensity = intensity
     }
   }
 
@@ -241,6 +261,12 @@ export class MazeRenderer {
   get wallHeight(): number { return WALL_H }
 
   dispose(): void {
+    for (const slot of this.lampSlots) {
+      if (slot.light) {
+        this.group.remove(slot.light)
+        slot.light = null
+      }
+    }
     this.scene.remove(this.group)
     this.group.traverse(child => {
       if (child instanceof THREE.Mesh) {

@@ -155,6 +155,7 @@ export class MazeGame extends GameBase {
 
     this.camera.lookAt(this.smoothLookX, 1.5, this.smoothLookZ)
 
+    this.mazeRenderer.updatePlayerPosition(this.player.col, this.player.row)
     this.mazeRenderer.updateLamps(dt)
     this.mazeRenderer.updateExit(dt)
     this.minimap.update(this.player)
