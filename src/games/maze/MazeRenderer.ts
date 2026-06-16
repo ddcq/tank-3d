@@ -25,6 +25,18 @@ export class MazeRenderer {
     z: number
     light: THREE.PointLight | null
   }[] = []
+  private wallMeshes = new Map<string, THREE.Mesh>()
+  private fadingWall: {
+    mesh: THREE.Mesh
+    origTransparent: boolean
+    origOpacity: number
+    stage: 'out' | 'in'
+    progress: number
+  } | null = null
+  private readonly FADE_DURATION = 0.5
+  private effectMeshes: THREE.Mesh[] = []
+  private effectLights: THREE.PointLight[] = []
+  private monsterMesh: THREE.Mesh | null = null
 
   constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) {}
 
@@ -95,6 +107,7 @@ export class MazeRenderer {
         wall.castShadow = true
         wall.receiveShadow = true
         this.group.add(wall)
+        this.wallMeshes.set(`v:${row}:${col}`, wall)
       }
     }
 
@@ -109,6 +122,7 @@ export class MazeRenderer {
         wall.castShadow = true
         wall.receiveShadow = true
         this.group.add(wall)
+        this.wallMeshes.set(`h:${row}:${col}`, wall)
       }
     }
 
@@ -251,6 +265,152 @@ export class MazeRenderer {
     this.exitGlow.intensity = 0.3 + Math.sin(phase) * 0.25
   }
 
+  startWallFadeOut(col: number, row: number, dir: { dx: number; dz: number }): void {
+    let key: string | null = null
+    if (dir.dx === 1) {
+      key = `v:${row}:${col}`
+    } else if (dir.dx === -1) {
+      key = `v:${row}:${col - 1}`
+    } else if (dir.dz === 1) {
+      key = `h:${row}:${col}`
+    } else if (dir.dz === -1) {
+      key = `h:${row - 1}:${col}`
+    }
+    if (!key) return
+    const mesh = this.wallMeshes.get(key)
+    if (!mesh) return
+    const mat = mesh.material as THREE.MeshStandardMaterial
+    this.fadingWall = {
+      mesh,
+      origTransparent: mat.transparent,
+      origOpacity: mat.opacity,
+      stage: 'out',
+      progress: 0,
+    }
+    mat.transparent = true
+  }
+
+  startWallFadeIn(): void {
+    if (this.fadingWall) {
+      this.fadingWall.stage = 'in'
+      this.fadingWall.progress = 0
+    }
+  }
+
+  updateWallFade(dt: number): boolean {
+    if (!this.fadingWall) return true
+    const w = this.fadingWall
+    w.progress += dt
+    const t = Math.min(w.progress / this.FADE_DURATION, 1)
+    const mat = w.mesh.material as THREE.MeshStandardMaterial
+    mat.opacity = w.stage === 'out' ? 1 - t : t
+    return t >= 1
+  }
+
+  resetWallFade(): void {
+    if (this.fadingWall) {
+      const mat = this.fadingWall.mesh.material as THREE.MeshStandardMaterial
+      mat.transparent = this.fadingWall.origTransparent
+      mat.opacity = this.fadingWall.origOpacity
+      this.fadingWall = null
+    }
+  }
+
+  showGunPickup(col: number, row: number): void {
+    const pos = this.gridToWorld(col, row)
+    const geo = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8)
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700 })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.set(pos.x, 0.15, pos.z)
+    mesh.rotation.x = Math.PI / 2
+    this.group.add(mesh)
+    this.effectMeshes.push(mesh)
+
+    const light = new THREE.PointLight(0xffd700, 2, 4, 2)
+    light.position.set(pos.x, 0.5, pos.z)
+    this.group.add(light)
+    this.effectLights.push(light)
+  }
+
+  showMonster(col: number, row: number): THREE.Mesh {
+    const pos = this.gridToWorld(col, row)
+    const geo = new THREE.SphereGeometry(0.4, 12, 12)
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2200 })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.set(pos.x, 0.4, pos.z)
+    this.group.add(mesh)
+    this.effectMeshes.push(mesh)
+    this.monsterMesh = mesh
+    return mesh
+  }
+
+  showMonsterDeath(): void {
+    const monster = this.monsterMesh
+    if (!monster) return
+    this.monsterMesh = null
+    this.effectMeshes = this.effectMeshes.filter(m => m !== monster)
+    const mat = monster.material as THREE.MeshBasicMaterial
+    mat.color.setHex(0x442200)
+    const pos = monster.position
+    const light = new THREE.PointLight(0xff4400, 3, 5, 2)
+    light.position.set(pos.x, 0.5, pos.z)
+    this.group.add(light)
+    this.effectLights.push(light)
+    setTimeout(() => {
+      this.group.remove(monster)
+      this.group.remove(light)
+      this.effectLights = this.effectLights.filter(l => l !== light)
+      monster.geometry.dispose()
+      mat.dispose()
+      light.dispose()
+    }, 500)
+  }
+
+  showDeathEffect(col: number, row: number): void {
+    const pos = this.gridToWorld(col, row)
+    const light = new THREE.PointLight(0xff0000, 4, 6, 2)
+    light.position.set(pos.x, 1, pos.z)
+    this.group.add(light)
+    this.effectLights.push(light)
+    setTimeout(() => {
+      this.group.remove(light)
+      this.effectLights = this.effectLights.filter(l => l !== light)
+      light.dispose()
+    }, 800)
+  }
+
+  teleportEffect(col: number, row: number): void {
+    const pos = this.gridToWorld(col, row)
+    const light = new THREE.PointLight(0x00aaff, 3, 5, 2)
+    light.position.set(pos.x, 1, pos.z)
+    this.group.add(light)
+    this.effectLights.push(light)
+    setTimeout(() => {
+      this.group.remove(light)
+      this.effectLights = this.effectLights.filter(l => l !== light)
+      light.dispose()
+    }, 600)
+  }
+
+  clearEffects(): void {
+    this.monsterMesh = null
+    for (const mesh of this.effectMeshes) {
+      this.group.remove(mesh)
+      mesh.geometry.dispose()
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach(m => m.dispose())
+      } else {
+        mesh.material.dispose()
+      }
+    }
+    this.effectMeshes = []
+    for (const light of this.effectLights) {
+      this.group.remove(light)
+      light.dispose()
+    }
+    this.effectLights = []
+  }
+
   gridToWorld(col: number, row: number): { x: number; z: number } {
     const x = col * CELL + HALF - this.maze.width * HALF
     const z = row * CELL + HALF
@@ -261,12 +421,15 @@ export class MazeRenderer {
   get wallHeight(): number { return WALL_H }
 
   dispose(): void {
+    this.resetWallFade()
+    this.clearEffects()
     for (const slot of this.lampSlots) {
       if (slot.light) {
         this.group.remove(slot.light)
         slot.light = null
       }
     }
+    this.wallMeshes.clear()
     this.scene.remove(this.group)
     this.group.traverse(child => {
       if (child instanceof THREE.Mesh) {

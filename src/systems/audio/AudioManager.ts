@@ -237,6 +237,130 @@ export class AudioManager {
     osc.stop(ctx.currentTime + 0.35)
   }
 
+  playGunPickup(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(600, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.08)
+    gain.gain.setValueAtTime(0.1, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.25)
+  }
+
+  playMonster(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(80, ctx.currentTime)
+    osc.frequency.linearRampToValueAtTime(40, ctx.currentTime + 0.4)
+    gain.gain.setValueAtTime(0.2, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.5)
+
+    const n = this.noise(ctx, 0.3)
+    const ng = ctx.createGain()
+    const np = ctx.createBiquadFilter()
+    np.type = 'lowpass'
+    np.frequency.setValueAtTime(150, ctx.currentTime)
+    np.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.3)
+    ng.gain.setValueAtTime(0.15, ctx.currentTime)
+    ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    n.connect(np)
+    np.connect(ng)
+    ng.connect(ctx.destination)
+    n.start(ctx.currentTime)
+    n.stop(ctx.currentTime + 0.3)
+  }
+
+  playGunShot(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(150, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(20, ctx.currentTime + 0.15)
+    gain.gain.setValueAtTime(0.25, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.15)
+
+    const n = this.noise(ctx, 0.08)
+    const ng = ctx.createGain()
+    ng.gain.setValueAtTime(0.3, ctx.currentTime)
+    ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08)
+    n.connect(ng)
+    ng.connect(ctx.destination)
+    n.start(ctx.currentTime)
+    n.stop(ctx.currentTime + 0.08)
+  }
+
+  playTeleport(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(200, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.25)
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.4)
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.2)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.5)
+  }
+
+  playDeath(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(200, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.6)
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.7)
+
+    const n = this.noise(ctx, 0.5)
+    const ng = ctx.createGain()
+    const np = ctx.createBiquadFilter()
+    np.type = 'lowpass'
+    np.frequency.setValueAtTime(300, ctx.currentTime)
+    np.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.5)
+    ng.gain.setValueAtTime(0.1, ctx.currentTime)
+    ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    n.connect(np)
+    np.connect(ng)
+    ng.connect(ctx.destination)
+    n.start(ctx.currentTime)
+    n.stop(ctx.currentTime + 0.5)
+  }
+
   dispose(): void {
     this.stopAmbient()
     this.ctx?.close()

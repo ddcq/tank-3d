@@ -11,6 +11,8 @@ export const enum PlayerState {
   TURNING,
   INTERSECTION,
   DEAD_END_TURN,
+  SURPRISE,
+  TELEPORTING,
   WIN,
 }
 
@@ -33,14 +35,26 @@ function cellToWorld(col: number, row: number, w: number): { x: number; z: numbe
   }
 }
 
+export interface DeadEndInfo {
+  col: number
+  row: number
+  forwardDir: Dir
+  isBoundary: boolean
+}
+
 export class MazePlayerController {
   col: number
   row: number
   dirIndex = 0
   state: PlayerState = PlayerState.MOVING
 
+  hasGun = false
+  bullets = 0
+  maxBullets = 6
+
   worldX = 0
   worldZ = 0
+  worldY = 0
   rotation = 0
   stateTimer = 0
   targetRotation = 0
@@ -57,12 +71,20 @@ export class MazePlayerController {
   onDeadEnd?: () => void
   onConfirm?: () => void
   onWin?: () => void
+  onDeadEndEntry?: (info: DeadEndInfo) => boolean
 
   private fromX = 0
   private fromZ = 0
   private toX = 0
   private toZ = 0
   private moveProgress = 1
+  private teleportFromX = 0
+  private teleportFromZ = 0
+  private teleportToX = 0
+  private teleportToZ = 0
+  private teleportProgress = 0
+  private wallPassSpeed = 0
+  private skipNextSurprise = false
   private justConfirmed = false
   private lastPitch = 0
   private readonly vWalls: Uint8Array
@@ -100,6 +122,9 @@ export class MazePlayerController {
     }
   }
 
+  get mazeWidth(): number { return this.w }
+  get mazeHeight(): number { return this.h }
+
   get direction(): Dir {
     return DIRS[this.dirIndex]
   }
@@ -126,6 +151,57 @@ export class MazePlayerController {
     this.row = row
   }
 
+  resumeTurning(): void {
+    this.state = PlayerState.DEAD_END_TURN
+    this.onDeadEnd?.()
+    this.stateTimer = 0
+    this.startRotation = this.rotation
+    this.targetRotation = this.rotation + Math.PI
+    this.dirIndex = (this.dirIndex + 2) % 4
+  }
+
+  resumeForward(): void {
+    const dir = this.direction
+    const nc = this.col + dir.dx
+    const nr = this.row + dir.dz
+    this.beginStep(nc, nr)
+    this.state = PlayerState.MOVING
+  }
+
+  teleportTo(col: number, row: number): void {
+    this.teleportFromX = this.worldX
+    this.teleportFromZ = this.worldZ
+    this.col = col
+    this.row = row
+    const pos = cellToWorld(col, row, this.w)
+    this.teleportToX = pos.x
+    this.teleportToZ = pos.z
+    this.teleportProgress = 0
+    this.state = PlayerState.TELEPORTING
+  }
+
+  beginWallStep(col: number, row: number): void {
+    this.fromX = this.worldX
+    this.fromZ = this.worldZ
+    const pos = cellToWorld(col, row, this.w)
+    this.toX = pos.x
+    this.toZ = pos.z
+    this.moveProgress = 0
+    this.col = col
+    this.row = row
+    this.wallPassSpeed = 0.6
+    this.skipNextSurprise = true
+  }
+
+  applyGunPickup(): void {
+    if (!this.hasGun) {
+      this.hasGun = true
+      this.bullets = 1
+    } else if (this.bullets < this.maxBullets) {
+      this.bullets++
+    }
+  }
+
   private finishStep(): void {
     this.worldX = this.toX
     this.worldZ = this.toZ
@@ -134,6 +210,23 @@ export class MazePlayerController {
     if (this.row === 0) {
       this.state = PlayerState.WIN
       this.onWin?.()
+    }
+  }
+
+  private updateTeleporting(dt: number): void {
+    const duration = 1.0
+    this.teleportProgress += dt
+    const t = Math.min(this.teleportProgress / duration, 1)
+    const ease = t * t * (3 - 2 * t)
+    this.worldX = this.teleportFromX + (this.teleportToX - this.teleportFromX) * ease
+    this.worldZ = this.teleportFromZ + (this.teleportToZ - this.teleportFromZ) * ease
+    this.worldY = Math.sin(Math.PI * t) * 4.5
+    if (t >= 1) {
+      this.worldX = this.teleportToX
+      this.worldZ = this.teleportToZ
+      this.worldY = 0
+      this.moveProgress = 1
+      this.state = PlayerState.MOVING
     }
   }
 
@@ -149,9 +242,28 @@ export class MazePlayerController {
       case PlayerState.INTERSECTION:
         this.updateIntersection(dt, headYaw, headPitch)
         break
+      case PlayerState.TELEPORTING:
+        this.updateTeleporting(dt)
+        break
     }
 
-    if (this.state !== PlayerState.INTERSECTION && this.state !== PlayerState.WIN) {
+    if (this.wallPassSpeed > 0 && this.moveProgress < 1) {
+      this.moveProgress = Math.min(this.moveProgress + dt * this.wallPassSpeed, 1)
+      const t = this.moveProgress
+      this.worldX = this.fromX + (this.toX - this.fromX) * t
+      this.worldZ = this.fromZ + (this.toZ - this.fromZ) * t
+      if (this.moveProgress >= 1) {
+        this.worldX = this.toX
+        this.worldZ = this.toZ
+        this.moveProgress = 1
+        this.wallPassSpeed = 0
+        this.onStep?.()
+        this.state = PlayerState.MOVING
+      }
+      return
+    }
+
+    if (this.state !== PlayerState.INTERSECTION && this.state !== PlayerState.WIN && this.state !== PlayerState.SURPRISE && this.state !== PlayerState.TELEPORTING) {
       if (this.moveProgress < 1) {
         this.moveProgress = Math.min(this.moveProgress + dt * MOVE_SPEED, 1)
         const t = this.moveProgress
@@ -166,6 +278,8 @@ export class MazePlayerController {
 
   private updateMoving(_dt: number): void {
     if (this.moveProgress < 1) return
+    const suppressSurprise = this.skipNextSurprise
+    this.skipNextSurprise = false
 
     const dir = this.direction
     const fwd: Dir = dir
@@ -222,30 +336,28 @@ export class MazePlayerController {
     } else {
       if (openForward) {
         this.beginStep(this.col + fwd.dx, this.row + fwd.dz)
-      } else if (openLeft) {
-        const targetIdx = DIRS.findIndex(d => d.dx === left.dx && d.dz === left.dz)
-        this.state = PlayerState.TURNING
-        this.onTurn?.()
-        this.stateTimer = 0
-        this.startRotation = this.rotation
-        this.targetRotation = this.rotation - Math.PI / 2
-        this.dirIndex = targetIdx >= 0 ? targetIdx : this.dirIndex
-      } else if (openRight) {
-        const targetIdx = DIRS.findIndex(d => d.dx === right.dx && d.dz === right.dz)
-        this.state = PlayerState.TURNING
-        this.onTurn?.()
-        this.stateTimer = 0
-        this.startRotation = this.rotation
-        this.targetRotation = this.rotation + Math.PI / 2
-        this.dirIndex = targetIdx >= 0 ? targetIdx : this.dirIndex
-      } else {
-        this.state = PlayerState.DEAD_END_TURN
-        this.onDeadEnd?.()
-        this.stateTimer = 0
-        this.startRotation = this.rotation
-        this.targetRotation = this.rotation + Math.PI
-        this.dirIndex = (this.dirIndex + 2) % 4
+        return
+      } else if (suppressSurprise) {
+        // Just arrived through a wall pass → no surprise, turn around
+      } else if (this.onDeadEndEntry) {
+        const forwardDir = this.direction
+        const nc = this.col + forwardDir.dx
+        const nr = this.row + forwardDir.dz
+        const isBoundary = nc < 0 || nc >= this.w || nr < 0 || nr >= this.h
+        if (this.onDeadEndEntry({ col: this.col, row: this.row, forwardDir, isBoundary })) {
+          if (this.state === PlayerState.MOVING) {
+            this.state = PlayerState.SURPRISE
+          }
+          return
+        }
+        // callback returned false → no surprise, fall through to DEAD_END_TURN
       }
+      this.state = PlayerState.DEAD_END_TURN
+      this.onDeadEnd?.()
+      this.stateTimer = 0
+      this.startRotation = this.rotation
+      this.targetRotation = this.rotation + Math.PI
+      this.dirIndex = (this.dirIndex + 2) % 4
     }
   }
 
