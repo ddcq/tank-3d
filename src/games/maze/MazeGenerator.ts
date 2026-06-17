@@ -85,8 +85,24 @@ export function generateMaze(w: number, h: number): MazeData {
     }
   }
 
-  const startCol = Math.floor(Math.random() * w)
-  const startRow = h - 1
+  function countOpenDirs(c: number, r: number): number {
+    let open = 0
+    if (c > 0 && vWalls[r * (w - 1) + (c - 1)] === 0) open++
+    if (c < w - 1 && vWalls[r * (w - 1) + c] === 0) open++
+    if (r > 0 && hWalls[(r - 1) * w + c] === 0) open++
+    if (r < h - 1 && hWalls[r * w + c] === 0) open++
+    return open
+  }
+
+  const bottomRow = h - 1
+  const intersections: number[] = []
+  for (let x = 0; x < w; x++) {
+    if (countOpenDirs(x, bottomRow) >= 3) intersections.push(x)
+  }
+  const startCol = intersections.length > 0
+    ? intersections[Math.floor(Math.random() * intersections.length)]
+    : Math.floor(Math.random() * w)
+  const startRow = bottomRow
 
   const topCandidates: number[] = []
   for (let x = 0; x < w; x++) topCandidates.push(x)

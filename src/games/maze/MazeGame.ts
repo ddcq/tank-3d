@@ -6,9 +6,12 @@ import { MazePlayerController, PlayerState, type DeadEndInfo } from './MazePlaye
 import { MazeMinimap } from './MazeMinimap'
 import { HeadTrackingSystemImpl } from '../../systems/headTracking/HeadTrackingSystem'
 import { AudioManager } from '../../systems/audio/AudioManager'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MainMenu } from '../../ui/MainMenu'
 
 type SurpriseType = 'gun' | 'monster' | 'transparent_wall' | 'teleport'
+
+const ROT180 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
 
 export class MazeGame extends GameBase {
   readonly id = 'maze'
@@ -28,6 +31,8 @@ export class MazeGame extends GameBase {
   private keysDown = new Set<string>()
   private audio = new AudioManager()
   private audioInitialized = false
+  private monsterOverlay: HTMLDivElement | null = null
+  private gunModel: THREE.Group | null = null
   private smoothLookX = 0
   private smoothLookZ = 0
   private surpriseTimer = 0
@@ -56,6 +61,8 @@ export class MazeGame extends GameBase {
     this.container.appendChild(this.renderer.domElement)
 
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100)
+
+    this.loadGunModel()
 
     this.mazeData = generateMaze(10, 30)
 
@@ -138,10 +145,15 @@ export class MazeGame extends GameBase {
     this.hudWeapon.textContent = this.player.hasGun
       ? `Armé · ${this.player.bullets} balle${this.player.bullets > 1 ? 's' : ''}`
       : 'Non armé'
+
+    if (this.gunModel) {
+      this.gunModel.visible = this.player.bullets > 0
+    }
   }
 
   private initAudio(): void {
     this.audio.init()
+    this.audio.preloadMonster()
     this.audio.startAmbient()
   }
 
@@ -162,6 +174,11 @@ export class MazeGame extends GameBase {
     window.removeEventListener('resize', this.onResize)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+    this.hideMonsterOverlay()
+    if (this.gunModel) {
+      this.scene.remove(this.gunModel)
+      this.gunModel = null
+    }
     this.audio.stopAmbient()
     this.audio.dispose()
     this.renderer.dispose()
@@ -219,6 +236,16 @@ export class MazeGame extends GameBase {
     return true
   }
 
+  private isDeadEnd(col: number, row: number): boolean {
+    const { width: w, height: h, vWalls, hWalls } = this.mazeData
+    let walls = 0
+    if (col <= 0 || vWalls[row * (w - 1) + (col - 1)] !== 0) walls++
+    if (col >= w - 1 || vWalls[row * (w - 1) + col] !== 0) walls++
+    if (row <= 0 || hWalls[(row - 1) * w + col] !== 0) walls++
+    if (row >= h - 1 || hWalls[row * w + col] !== 0) walls++
+    return walls >= 3
+  }
+
   private pickSurprise(info: DeadEndInfo): SurpriseType {
     const types: SurpriseType[] = ['teleport']
     if (!this.player.hasGun) {
@@ -227,7 +254,11 @@ export class MazeGame extends GameBase {
       types.push('gun')
     }
     if (!info.isBoundary) {
-      types.push('transparent_wall')
+      const nc = info.col + info.forwardDir.dx
+      const nr = info.row + info.forwardDir.dz
+      if (!this.isDeadEnd(nc, nr)) {
+        types.push('transparent_wall')
+      }
     }
     types.push('monster')
     return types[Math.floor(Math.random() * types.length)]
@@ -250,13 +281,51 @@ export class MazeGame extends GameBase {
         break
       case 'monster':
         this.audio.playMonster()
-        this.mazeRenderer.showMonster(info.col, info.row)
+        this.showMonsterOverlay()
+        if (!this.player.hasGun) {
+          this.audio.playMonsterApproach()
+        }
         break
       case 'teleport':
         this.audio.playTeleport()
         this.doTeleport()
         break
     }
+  }
+
+  private showMonsterOverlay(): void {
+    this.hideMonsterOverlay()
+    const idx = Math.floor(Math.random() * 7) + 1
+    const overlay = document.createElement('div')
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 9999;
+      background: url(/images/monster${idx}.webp) center/cover no-repeat;
+    `
+    document.body.appendChild(overlay)
+    this.monsterOverlay = overlay
+  }
+
+  private hideMonsterOverlay(): void {
+    if (this.monsterOverlay) {
+      this.monsterOverlay.remove()
+      this.monsterOverlay = null
+    }
+  }
+
+  private loadGunModel(): void {
+    const loader = new GLTFLoader()
+    loader.load(
+      '/models/fps_animations_lowpoly_mp5.glb',
+      (gltf) => {
+        const model = gltf.scene
+        model.scale.setScalar(0.6)
+        model.visible = false
+        this.scene.add(model)
+        this.gunModel = model
+      },
+      undefined,
+      () => { },
+    )
   }
 
   private finishSurprise(): void {
@@ -275,14 +344,12 @@ export class MazeGame extends GameBase {
         break
       case 'monster':
         if (this.player.hasGun) {
+          this.hideMonsterOverlay()
           this.audio.playGunShot()
           if (this.player.bullets > 0) this.player.bullets--
-          this.mazeRenderer.showMonsterDeath()
           this.player.resumeTurning()
         } else {
           this.audio.playDeath()
-          this.mazeRenderer.clearEffects()
-          this.mazeRenderer.showDeathEffect(info.col, info.row)
           this.deathTimerActive = true
           this.deathTimer = 1.5
         }
@@ -381,6 +448,14 @@ export class MazeGame extends GameBase {
 
     this.camera.lookAt(this.smoothLookX, 1.5 + this.player.worldY, this.smoothLookZ)
 
+    if (this.gunModel) {
+      const offset = new THREE.Vector3(0, -0.9, 0.1)
+      offset.applyQuaternion(this.camera.quaternion)
+      this.gunModel.position.copy(this.camera.position).add(offset)
+      this.gunModel.quaternion.copy(this.camera.quaternion)
+      this.gunModel.quaternion.multiply(ROT180)
+    }
+
     if (this.wallFadePhase === 'fade_out') {
       const done = this.mazeRenderer.updateWallFade(dt)
       if (done && this.deadEndInfo) {
@@ -478,6 +553,7 @@ export class MazeGame extends GameBase {
   }
 
   private resetGame(): void {
+    this.hideMonsterOverlay()
     this.running = false
     this.winHandled = false
     this.deathTimerActive = false
@@ -531,8 +607,8 @@ export class MazeGame extends GameBase {
     }
 
     if (e.key === 'ArrowUp' || e.key === ' ' || e.key === 'ArrowLeft' ||
-        e.key === 'ArrowRight' || e.key === 'a' || e.key === 'd' ||
-        e.key === 'Enter') {
+      e.key === 'ArrowRight' || e.key === 'a' || e.key === 'd' ||
+      e.key === 'Enter') {
       e.preventDefault()
     }
   }

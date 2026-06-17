@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { MazeData } from './MazeGenerator'
 
+
 const CELL = 2
 const WALL_H = 3
 const HALF = CELL / 2
@@ -36,7 +37,7 @@ export class MazeRenderer {
   private readonly FADE_DURATION = 0.5
   private effectMeshes: THREE.Mesh[] = []
   private effectLights: THREE.PointLight[] = []
-  private monsterMesh: THREE.Mesh | null = null
+
 
   constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) {}
 
@@ -332,40 +333,6 @@ export class MazeRenderer {
     this.effectLights.push(light)
   }
 
-  showMonster(col: number, row: number): THREE.Mesh {
-    const pos = this.gridToWorld(col, row)
-    const geo = new THREE.SphereGeometry(0.4, 12, 12)
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff2200 })
-    const mesh = new THREE.Mesh(geo, mat)
-    mesh.position.set(pos.x, 0.4, pos.z)
-    this.group.add(mesh)
-    this.effectMeshes.push(mesh)
-    this.monsterMesh = mesh
-    return mesh
-  }
-
-  showMonsterDeath(): void {
-    const monster = this.monsterMesh
-    if (!monster) return
-    this.monsterMesh = null
-    this.effectMeshes = this.effectMeshes.filter(m => m !== monster)
-    const mat = monster.material as THREE.MeshBasicMaterial
-    mat.color.setHex(0x442200)
-    const pos = monster.position
-    const light = new THREE.PointLight(0xff4400, 3, 5, 2)
-    light.position.set(pos.x, 0.5, pos.z)
-    this.group.add(light)
-    this.effectLights.push(light)
-    setTimeout(() => {
-      this.group.remove(monster)
-      this.group.remove(light)
-      this.effectLights = this.effectLights.filter(l => l !== light)
-      monster.geometry.dispose()
-      mat.dispose()
-      light.dispose()
-    }, 500)
-  }
-
   showDeathEffect(col: number, row: number): void {
     const pos = this.gridToWorld(col, row)
     const light = new THREE.PointLight(0xff0000, 4, 6, 2)
@@ -393,7 +360,6 @@ export class MazeRenderer {
   }
 
   clearEffects(): void {
-    this.monsterMesh = null
     for (const mesh of this.effectMeshes) {
       this.group.remove(mesh)
       mesh.geometry.dispose()
