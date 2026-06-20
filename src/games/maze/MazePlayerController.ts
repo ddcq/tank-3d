@@ -299,12 +299,15 @@ export class MazePlayerController {
     if (wallCount <= 1) {
       this.state = PlayerState.INTERSECTION
       this.stateTimer = 0
-      this.selectedDirIndex = this.dirIndex
       this.availableDirs = []
       if (openForward) this.availableDirs.push(fwd)
       if (openLeft) this.availableDirs.push(left)
       if (openRight) this.availableDirs.push(right)
       if (openBack) this.availableDirs.push(back)
+
+      // Initialize selectedDirIndex to forward direction if available, otherwise 0
+      const fwdIdx = this.availableDirs.findIndex(d => d.dx === fwd.dx && d.dz === fwd.dz)
+      this.selectedDirIndex = fwdIdx >= 0 ? fwdIdx : 0
       this.headLookAngle = 0
     } else if (wallCount === 2) {
       if (openForward) {
@@ -365,30 +368,35 @@ export class MazePlayerController {
     this.stateTimer += dt
     this.headLookAngle = headYaw
 
+    let bestDir: Dir
+
     if (this.cycleDirection !== 0) {
       const len = this.availableDirs.length
       if (len > 0) {
         this.selectedDirIndex = (this.selectedDirIndex + this.cycleDirection + len) % len
+        bestDir = this.availableDirs[this.selectedDirIndex]
+      } else {
+        bestDir = this.availableDirs[0]
       }
       this.cycleDirection = 0
-    }
+    } else {
+      const headAngle = this.rotation + headYaw * Math.PI * 0.4
+      const lookX = Math.sin(headAngle)
+      const lookZ = -Math.cos(headAngle)
 
-    const headAngle = this.rotation + headYaw * Math.PI * 0.4
-    const lookX = Math.sin(headAngle)
-    const lookZ = -Math.cos(headAngle)
-
-    let bestDir = this.availableDirs[0]
-    let bestDot = -Infinity
-    for (const d of this.availableDirs) {
-      const dot = d.dx * lookX + d.dz * lookZ
-      if (dot > bestDot) {
-        bestDot = dot
-        bestDir = d
+      bestDir = this.availableDirs[0]
+      let bestDot = -Infinity
+      for (const d of this.availableDirs) {
+        const dot = d.dx * lookX + d.dz * lookZ
+        if (dot > bestDot) {
+          bestDot = dot
+          bestDir = d
+        }
       }
-    }
 
-    const targetIdx = DIRS.findIndex(d => d.dx === bestDir.dx && d.dz === bestDir.dz)
-    if (targetIdx >= 0) this.selectedDirIndex = targetIdx
+      const targetIdx = this.availableDirs.findIndex(d => d.dx === bestDir.dx && d.dz === bestDir.dz)
+      if (targetIdx >= 0) this.selectedDirIndex = targetIdx
+    }
 
     const pitchVel = (headPitch - this.lastPitch) / Math.max(dt, 0.001)
     this.lastPitch = headPitch
