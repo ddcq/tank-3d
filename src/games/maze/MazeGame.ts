@@ -9,7 +9,7 @@ import { AudioManager } from '../../systems/audio/AudioManager'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MainMenu } from '../../ui/MainMenu'
 
-type SurpriseType = 'gun' | 'monster' | 'transparent_wall' | 'teleport'
+type SurpriseType = 'gun' | 'monster' | 'transparent_wall' | 'teleport' | 'lantern' | 'path'
 
 const ROT180 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
 
@@ -31,8 +31,10 @@ export class MazeGame extends GameBase {
   private keysDown = new Set<string>()
   private audio = new AudioManager()
   private audioInitialized = false
-  private monsterOverlay: HTMLDivElement | null = null
+
   private gunModel: THREE.Group | null = null
+  private gunMixer: THREE.AnimationMixer | null = null
+  private gunClips = new Map<string, THREE.AnimationClip>()
   private smoothLookX = 0
   private smoothLookZ = 0
   private surpriseTimer = 0
@@ -43,6 +45,9 @@ export class MazeGame extends GameBase {
   private visitedDeadEnds = new Map<string, SurpriseType>()
   private hudSurprise = document.createElement('div')
   private hudWeapon = document.createElement('div')
+  private visibilityRadius = 2
+  private guidePath: [number, number][] | null = null
+  private guideTimer = 0
 
   async init(): Promise<void> {
     this.scene = new THREE.Scene()
@@ -135,6 +140,8 @@ export class MazeGame extends GameBase {
         monster: 'Monstre',
         transparent_wall: 'Mur transparent',
         teleport: 'Téléportation',
+        lantern: 'Lanterne',
+        path: 'Itinéraire',
       }
       this.hudSurprise.textContent = names[this.currentSurprise]
       this.hudSurprise.style.display = 'block'
@@ -154,6 +161,7 @@ export class MazeGame extends GameBase {
   private initAudio(): void {
     this.audio.init()
     this.audio.preloadMonster()
+    this.audio.preloadGunshoot()
     this.audio.startAmbient()
   }
 
@@ -174,10 +182,13 @@ export class MazeGame extends GameBase {
     window.removeEventListener('resize', this.onResize)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
-    this.hideMonsterOverlay()
     if (this.gunModel) {
       this.scene.remove(this.gunModel)
       this.gunModel = null
+    }
+    if (this.gunMixer) {
+      this.gunMixer.stopAllAction()
+      this.gunMixer = null
     }
     this.audio.stopAmbient()
     this.audio.dispose()
@@ -202,6 +213,7 @@ export class MazeGame extends GameBase {
       switch (visited) {
         case 'gun':
         case 'monster':
+        case 'lantern':
           return false
         case 'teleport':
           this.currentSurprise = 'teleport'
@@ -247,7 +259,7 @@ export class MazeGame extends GameBase {
   }
 
   private pickSurprise(info: DeadEndInfo): SurpriseType {
-    const types: SurpriseType[] = ['teleport']
+    const types: SurpriseType[] = ['teleport', 'lantern']
     if (!this.player.hasGun) {
       types.push('gun', 'gun')
     } else {
@@ -260,7 +272,7 @@ export class MazeGame extends GameBase {
         types.push('transparent_wall')
       }
     }
-    types.push('monster')
+    types.push('monster', 'path')
     return types[Math.floor(Math.random() * types.length)]
   }
 
@@ -270,6 +282,8 @@ export class MazeGame extends GameBase {
       case 'monster': return 1.2
       case 'transparent_wall': return 0.5
       case 'teleport': return 1.2
+      case 'lantern': return 1.5
+      case 'path': return 2
     }
   }
 
@@ -280,8 +294,13 @@ export class MazeGame extends GameBase {
         this.mazeRenderer.showGunPickup(info.col, info.row)
         break
       case 'monster':
-        this.audio.playMonster()
-        this.showMonsterOverlay()
+        if (!this.player.hasGun) {
+          this.audio.playMonster()
+        }
+        {
+          const idx = Math.floor(Math.random() * 7) + 1
+          this.mazeRenderer.showMonster(info.col, info.row, info.forwardDir, idx)
+        }
         if (!this.player.hasGun) {
           this.audio.playMonsterApproach()
         }
@@ -290,25 +309,14 @@ export class MazeGame extends GameBase {
         this.audio.playTeleport()
         this.doTeleport()
         break
-    }
-  }
-
-  private showMonsterOverlay(): void {
-    this.hideMonsterOverlay()
-    const idx = Math.floor(Math.random() * 7) + 1
-    const overlay = document.createElement('div')
-    overlay.style.cssText = `
-      position: fixed; inset: 0; z-index: 9999;
-      background: url(/images/monster${idx}.webp) center/cover no-repeat;
-    `
-    document.body.appendChild(overlay)
-    this.monsterOverlay = overlay
-  }
-
-  private hideMonsterOverlay(): void {
-    if (this.monsterOverlay) {
-      this.monsterOverlay.remove()
-      this.monsterOverlay = null
+      case 'lantern':
+        this.audio.playConfirm()
+        this.applyLantern()
+        break
+      case 'path':
+        this.audio.playConfirm()
+        this.applyGuidePath()
+        break
     }
   }
 
@@ -322,10 +330,24 @@ export class MazeGame extends GameBase {
         model.visible = false
         this.scene.add(model)
         this.gunModel = model
+        this.gunMixer = new THREE.AnimationMixer(model)
+        for (const clip of gltf.animations) {
+          this.gunClips.set(clip.name, clip)
+        }
       },
       undefined,
       () => { },
     )
+  }
+
+  private playGunAnim(name: string): void {
+    const clip = this.gunClips.get(name)
+    if (!this.gunMixer || !clip) return
+    const action = this.gunMixer.clipAction(clip)
+    action.stop().reset()
+    action.clampWhenFinished = true
+    action.setLoop(THREE.LoopOnce, 1)
+    action.play()
   }
 
   private finishSurprise(): void {
@@ -338,14 +360,19 @@ export class MazeGame extends GameBase {
 
     switch (type) {
       case 'gun':
-        this.player.applyGunPickup()
-        this.mazeRenderer.clearEffects()
-        this.player.resumeTurning()
+        {
+          const wasEmpty = this.player.bullets === 0
+          this.player.applyGunPickup()
+          this.playGunAnim(wasEmpty ? 'Arms_fullreload' : 'Arms_notfullreload')
+          this.mazeRenderer.clearEffects()
+          this.player.resumeTurning()
+        }
         break
       case 'monster':
         if (this.player.hasGun) {
-          this.hideMonsterOverlay()
-          this.audio.playGunShot()
+          this.audio.playGunShotFromFile()
+          this.playGunAnim('Arms_Fire')
+          this.mazeRenderer.clearEffects()
           if (this.player.bullets > 0) this.player.bullets--
           this.player.resumeTurning()
         } else {
@@ -362,7 +389,71 @@ export class MazeGame extends GameBase {
       case 'teleport':
         this.mazeRenderer.clearEffects()
         break
+      case 'lantern':
+        this.mazeRenderer.clearEffects()
+        this.player.resumeTurning()
+        break
+      case 'path':
+        this.mazeRenderer.clearEffects()
+        this.player.resumeTurning()
+        break
     }
+  }
+
+  private applyLantern(): void {
+    this.visibilityRadius = Math.min(this.visibilityRadius + 3, 8)
+    this.minimap.setVisibilityRadius(this.visibilityRadius)
+  }
+
+  private applyGuidePath(): void {
+    const path = this.findPathToExit(this.player.col, this.player.row)
+    this.guidePath = path.length > 0 ? path : null
+    this.guideTimer = this.guidePath ? 30 : 0
+    if (this.guidePath) {
+      this.minimap.setGuidePath(this.guidePath)
+    }
+  }
+
+  private findPathToExit(fromCol: number, fromRow: number): [number, number][] {
+    const { width: w, height: h, vWalls, hWalls, endCol, endRow } = this.mazeData
+    const visited = new Set<number>()
+    const parent = new Map<number, [number, number]>()
+    const queue: [number, number][] = [[fromCol, fromRow]]
+    visited.add(fromRow * w + fromCol)
+
+    while (queue.length > 0) {
+      const [col, row] = queue.shift()!
+      if (col === endCol && row === endRow) {
+        const path: [number, number][] = []
+        let cur: [number, number] = [col, row]
+        path.push(cur)
+        while (parent.has(cur[1] * w + cur[0])) {
+          cur = parent.get(cur[1] * w + cur[0])!
+          path.unshift(cur)
+        }
+        return path
+      }
+
+      const dirs: { dx: number; dz: number; canMove: (c: number, r: number) => boolean }[] = [
+        { dx: 1, dz: 0, canMove: (c, r) => c < w - 1 && vWalls[r * (w - 1) + c] === 0 },
+        { dx: -1, dz: 0, canMove: (c, r) => c > 0 && vWalls[r * (w - 1) + (c - 1)] === 0 },
+        { dx: 0, dz: 1, canMove: (c, r) => r < h - 1 && hWalls[r * w + c] === 0 },
+        { dx: 0, dz: -1, canMove: (c, r) => r > 0 && hWalls[(r - 1) * w + c] === 0 },
+      ]
+
+      for (const { dx, dz, canMove } of dirs) {
+        const nc = col + dx
+        const nr = row + dz
+        const key = nr * w + nc
+        if (nc >= 0 && nc < w && nr >= 0 && nr < h && !visited.has(key) && canMove(col, row)) {
+          visited.add(key)
+          parent.set(key, [col, row])
+          queue.push([nc, nr])
+        }
+      }
+    }
+
+    return []
   }
 
   private doTeleport(): void {
@@ -412,6 +503,14 @@ export class MazeGame extends GameBase {
 
     this.updateDeathTimer(dt)
 
+    if (this.guideTimer > 0) {
+      this.guideTimer -= dt
+      if (this.guideTimer <= 0) {
+        this.guidePath = null
+        this.minimap.clearGuidePath()
+      }
+    }
+
     if (this.player.state === PlayerState.WIN) return
 
     const yaw = this.headTracking.getIsTracking() ? -this.headTracking.getHeadYaw() : 0
@@ -454,6 +553,9 @@ export class MazeGame extends GameBase {
       this.gunModel.position.copy(this.camera.position).add(offset)
       this.gunModel.quaternion.copy(this.camera.quaternion)
       this.gunModel.quaternion.multiply(ROT180)
+    }
+    if (this.gunMixer) {
+      this.gunMixer.update(dt)
     }
 
     if (this.wallFadePhase === 'fade_out') {
@@ -553,13 +655,14 @@ export class MazeGame extends GameBase {
   }
 
   private resetGame(): void {
-    this.hideMonsterOverlay()
     this.running = false
     this.winHandled = false
     this.deathTimerActive = false
     this.currentSurprise = null
     this.deadEndInfo = null
     this.surpriseTimer = 0
+    this.guidePath = null
+    this.guideTimer = 0
     this.wallFadePhase = null
     this.visitedDeadEnds.clear()
     cancelAnimationFrame(this.rafId)

@@ -3,6 +3,7 @@ export class AudioManager {
   private ambientNodes: AudioNode[] = []
   private ambientGain: GainNode | null = null
   private monsterBuffer: AudioBuffer | null = null
+  private gunshotBuffer: AudioBuffer | null = null
 
   init(): void {
     if (this.ctx) return
@@ -28,6 +29,12 @@ export class AudioManager {
   preloadMonster(): void {
     this.loadBuffer('/sounds/monster.mp3')
       .then(buf => { this.monsterBuffer = buf })
+      .catch(() => { /* fallback to synthetic sound */ })
+  }
+
+  preloadGunshoot(): void {
+    this.loadBuffer('/sounds/gunshoot.mp3')
+      .then(buf => { this.gunshotBuffer = buf })
       .catch(() => { /* fallback to synthetic sound */ })
   }
 
@@ -338,6 +345,23 @@ export class AudioManager {
     ng.connect(ctx.destination)
     n.start(ctx.currentTime)
     n.stop(ctx.currentTime + 0.08)
+  }
+
+  playGunShotFromFile(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    if (this.gunshotBuffer) {
+      const src = ctx.createBufferSource()
+      src.buffer = this.gunshotBuffer
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.8, ctx.currentTime)
+      src.connect(gain)
+      gain.connect(ctx.destination)
+      src.start(ctx.currentTime)
+    } else {
+      this.playGunShot()
+    }
   }
 
   playTeleport(): void {

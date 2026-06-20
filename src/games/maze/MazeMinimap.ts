@@ -3,10 +3,13 @@ import type { MazePlayerController } from './MazePlayerController'
 
 const CELL_PX = 11
 const PADDING = 8
+const DEFAULT_RADIUS = 3
 
 export class MazeMinimap {
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
+  private visibilityRadius = DEFAULT_RADIUS
+  private guidePath: [number, number][] | null = null
 
   constructor(private readonly maze: MazeData) {
     const w = maze.width * CELL_PX + PADDING * 2
@@ -24,122 +27,43 @@ export class MazeMinimap {
       `height:${h}px`,
       'z-index:50',
       'pointer-events:none',
+      'background:transparent',
       'border:1px solid rgba(255,255,255,0.15)',
       'border-radius:6px',
       'box-shadow:0 0 20px rgba(0,0,0,0.5)',
     ].join(';')
 
     this.ctx = this.canvas.getContext('2d')!
-    this.drawMaze()
   }
 
   get element(): HTMLCanvasElement {
     return this.canvas
   }
 
-  private drawMaze(): void {
-    this.drawBackground()
-    this.drawCells()
-    this.drawWalls()
-    this.drawMarkers()
+  setVisibilityRadius(r: number): void {
+    this.visibilityRadius = r
   }
 
-  private drawBackground(): void {
-    const ctx = this.ctx
-    ctx.fillStyle = '#141414'
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+  setGuidePath(cells: [number, number][]): void {
+    this.guidePath = cells
   }
 
-  private drawCells(): void {
-    const ctx = this.ctx
-    const w = this.maze.width
-    const h = this.maze.height
-
-    ctx.save()
-    ctx.translate(PADDING, PADDING)
-
-    ctx.fillStyle = '#1a2a1a'
-    for (let row = 0; row < h; row++) {
-      for (let col = 0; col < w; col++) {
-        ctx.fillRect(col * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX)
-      }
-    }
-
-    ctx.restore()
-  }
-
-  private drawWalls(): void {
-    const ctx = this.ctx
-    const { width, height, vWalls, hWalls } = this.maze
-
-    ctx.save()
-    ctx.translate(PADDING, PADDING)
-
-    ctx.strokeStyle = '#3a3a3a'
-    ctx.lineWidth = 2
-
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width - 1; col++) {
-        if (vWalls[row * (width - 1) + col] === 1) {
-          const x = (col + 1) * CELL_PX
-          const y = row * CELL_PX
-          ctx.beginPath()
-          ctx.moveTo(x, y)
-          ctx.lineTo(x, y + CELL_PX)
-          ctx.stroke()
-        }
-      }
-    }
-
-    for (let row = 0; row < height - 1; row++) {
-      for (let col = 0; col < width; col++) {
-        if (hWalls[row * width + col] === 1) {
-          const x = col * CELL_PX
-          const y = (row + 1) * CELL_PX
-          ctx.beginPath()
-          ctx.moveTo(x, y)
-          ctx.lineTo(x + CELL_PX, y)
-          ctx.stroke()
-        }
-      }
-    }
-
-    ctx.strokeStyle = '#3a3a3a'
-    ctx.lineWidth = 2
-    ctx.strokeRect(0, 0, width * CELL_PX, height * CELL_PX)
-
-    ctx.restore()
-  }
-
-  private drawMarkers(): void {
-    const ctx = this.ctx
-
-    ctx.save()
-    ctx.translate(PADDING, PADDING)
-
-    const sx = this.maze.startCol * CELL_PX
-    const sy = this.maze.startRow * CELL_PX
-    ctx.fillStyle = '#00ff88'
-    ctx.fillRect(sx + 2, sy + 2, CELL_PX - 4, CELL_PX - 4)
-
-    const ex = this.maze.endCol * CELL_PX
-    const ey = this.maze.endRow * CELL_PX
-    ctx.fillStyle = '#ffcc00'
-    ctx.beginPath()
-    ctx.arc(ex + CELL_PX / 2, ey + CELL_PX / 2, CELL_PX * 0.35, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.restore()
+  clearGuidePath(): void {
+    this.guidePath = null
   }
 
   update(player: MazePlayerController): void {
     const ctx = this.ctx
+    const cw = this.canvas.width
+    const ch = this.canvas.height
 
-    ctx.fillStyle = '#141414'
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+    ctx.clearRect(0, 0, cw, ch)
 
     ctx.save()
     ctx.translate(PADDING, PADDING)
+
+    ctx.fillStyle = '#141414'
+    ctx.fillRect(0, 0, this.maze.width * CELL_PX, this.maze.height * CELL_PX)
 
     ctx.fillStyle = '#1a2a1a'
     for (let row = 0; row < this.maze.height; row++) {
@@ -149,6 +73,20 @@ export class MazeMinimap {
     }
 
     this.drawWallsContent(ctx)
+
+    if (this.guidePath && this.guidePath.length > 1) {
+      ctx.save()
+      ctx.strokeStyle = '#4488ff'
+      ctx.lineWidth = 2.5
+      ctx.globalAlpha = 0.8
+      ctx.beginPath()
+      ctx.moveTo(this.guidePath[0][0] * CELL_PX + CELL_PX / 2, this.guidePath[0][1] * CELL_PX + CELL_PX / 2)
+      for (let i = 1; i < this.guidePath.length; i++) {
+        ctx.lineTo(this.guidePath[i][0] * CELL_PX + CELL_PX / 2, this.guidePath[i][1] * CELL_PX + CELL_PX / 2)
+      }
+      ctx.stroke()
+      ctx.restore()
+    }
 
     const sx = this.maze.startCol * CELL_PX
     const sy = this.maze.startRow * CELL_PX
@@ -164,7 +102,6 @@ export class MazeMinimap {
 
     const px = player.col * CELL_PX + CELL_PX / 2
     const py = player.row * CELL_PX + CELL_PX / 2
-
     ctx.save()
     ctx.translate(px, py)
 
@@ -181,7 +118,20 @@ export class MazeMinimap {
     ctx.fill()
 
     ctx.restore()
+    ctx.restore()
 
+    const cx = px + PADDING
+    const cy = py + PADDING
+    const vr = this.visibilityRadius * CELL_PX
+    const blurPx = Math.min(CELL_PX * 1.5, vr * 0.4)
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-in'
+    const gradient = ctx.createRadialGradient(cx, cy, vr - blurPx, cx, cy, vr)
+    gradient.addColorStop(0, 'rgba(255,255,255,1)')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, cw, ch)
     ctx.restore()
   }
 

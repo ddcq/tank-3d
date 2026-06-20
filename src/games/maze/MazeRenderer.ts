@@ -16,6 +16,7 @@ export class MazeRenderer {
   private startMarker!: THREE.Mesh
   private endMarker!: THREE.Mesh
   private exitGlow!: THREE.PointLight
+  private hemiLight!: THREE.HemisphereLight
   private lampPhase = 0
   private lampSpeed = 3
   private lampSlots: {
@@ -39,7 +40,7 @@ export class MazeRenderer {
   private effectLights: THREE.PointLight[] = []
 
 
-  constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) {}
+  constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) { }
 
   async init(): Promise<void> {
     const loader = new THREE.TextureLoader()
@@ -161,8 +162,8 @@ export class MazeRenderer {
   }
 
   private buildLighting(): void {
-    const hemi = new THREE.HemisphereLight(0x446688, 0x222244, 1.2)
-    this.group.add(hemi)
+    this.hemiLight = new THREE.HemisphereLight(0x446688, 0x222244, 1.2)
+    this.group.add(this.hemiLight)
   }
 
   private buildPerimeterWalls(): void {
@@ -331,6 +332,50 @@ export class MazeRenderer {
     light.position.set(pos.x, 0.5, pos.z)
     this.group.add(light)
     this.effectLights.push(light)
+  }
+
+  showMonster(col: number, row: number, dir: { dx: number; dz: number }, imageIndex: number): void {
+    const pos = this.gridToWorld(col, row)
+    const faceX = pos.x + dir.dx * HALF
+    const faceZ = pos.z + dir.dz * HALF
+
+    let rotationY = 0
+    if (dir.dx === 1) {
+      rotationY = -Math.PI / 2
+    } else if (dir.dx === -1) {
+      rotationY = Math.PI / 2
+    } else if (dir.dz === 1) {
+      rotationY = Math.PI
+    } else {
+      rotationY = 0
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const s = 0.5
+      const cw = Math.round(img.naturalWidth * s)
+      const ch = Math.round(img.naturalHeight * s)
+      canvas.width = cw
+      canvas.height = ch
+      const ctx = canvas.getContext('2d')!
+      ctx.filter = 'contrast(2) brightness(0.5)'
+      ctx.drawImage(img, 0, 0, cw, ch)
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.needsUpdate = true
+      mat.map = texture
+      mat.needsUpdate = true
+    }
+    img.src = `/images/monster${imageIndex}.webp`
+
+    const plane = new THREE.PlaneGeometry(CELL * 0.5, WALL_H * 0.5)
+    const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true })
+    const mesh = new THREE.Mesh(plane, mat)
+    const pullback = WALL_THICK / 2 + 0.02
+    mesh.position.set(faceX - dir.dx * pullback, WALL_H / 2 * 0.75, faceZ - dir.dz * pullback)
+    mesh.rotation.y = rotationY
+    this.group.add(mesh)
+    this.effectMeshes.push(mesh)
   }
 
   showDeathEffect(col: number, row: number): void {
