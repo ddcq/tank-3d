@@ -77,6 +77,7 @@ export class MazeRenderer {
     })
 
     this.buildGeometry()
+    this.buildFakeWalls()
     this.buildLamps()
     this.buildLighting()
   }
@@ -133,6 +134,38 @@ export class MazeRenderer {
     this.buildStartMarker()
     this.buildEndMarker()
     this.buildPerimeterWalls()
+  }
+
+  private buildFakeWalls(): void {
+    const { width, fakeWalls } = this.maze
+    const wallGeoV = new THREE.BoxGeometry(WALL_THICK, WALL_H, CELL)
+    const wallGeoH = new THREE.BoxGeometry(CELL, WALL_H, WALL_THICK)
+
+    for (const fw of fakeWalls) {
+      const { col, row, dir } = fw
+      const mat = this.wallMat[Math.floor(Math.random() * this.wallMat.length)]
+      const key = `${dir}:${row}:${col}`
+
+      if (dir === 'v') {
+        const x = (col + 1) * CELL - width * HALF
+        const z = row * CELL + HALF
+        const wall = new THREE.Mesh(wallGeoV.clone(), mat)
+        wall.position.set(x, WALL_H / 2, z)
+        wall.castShadow = true
+        wall.receiveShadow = true
+        this.group.add(wall)
+        this.wallMeshes.set(key, wall)
+      } else {
+        const x = col * CELL + HALF - width * HALF
+        const z = (row + 1) * CELL
+        const wall = new THREE.Mesh(wallGeoH.clone(), mat)
+        wall.position.set(x, WALL_H / 2, z)
+        wall.castShadow = true
+        wall.receiveShadow = true
+        this.group.add(wall)
+        this.wallMeshes.set(key, wall)
+      }
+    }
   }
 
   private buildLamps(): void {
@@ -500,6 +533,22 @@ export class MazeRenderer {
 
   get cellSize(): number { return CELL }
   get wallHeight(): number { return WALL_H }
+
+  removeWall(key: string): void {
+    const mesh = this.wallMeshes.get(key)
+    if (!mesh) return
+    this.group.remove(mesh)
+    mesh.geometry.dispose()
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach(m => m.dispose())
+    } else {
+      mesh.material.dispose()
+    }
+    this.wallMeshes.delete(key)
+    if (this.fadingWall && this.fadingWall.mesh === mesh) {
+      this.fadingWall = null
+    }
+  }
 
   dispose(): void {
     this.resetWallFade()

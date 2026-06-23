@@ -52,6 +52,13 @@ export class MazeMinimap {
     this.guidePath = null
   }
 
+  removeFakeWall(key: string): void {
+    const idx = this.maze.fakeWalls.findIndex(fw => `${fw.dir}:${fw.row}:${fw.col}` === key)
+    if (idx !== -1) {
+      this.maze.fakeWalls.splice(idx, 1)
+    }
+  }
+
   update(player: MazePlayerController): void {
     const ctx = this.ctx
     const cw = this.canvas.width
@@ -136,7 +143,7 @@ export class MazeMinimap {
   }
 
   private drawWallsContent(ctx: CanvasRenderingContext2D): void {
-    const { width, height, vWalls, hWalls } = this.maze
+    const { width, height, vWalls, hWalls, fakeWalls } = this.maze
 
     ctx.strokeStyle = '#3a3a3a'
     ctx.lineWidth = 2
@@ -164,6 +171,25 @@ export class MazeMinimap {
           ctx.lineTo(x + CELL_PX, y)
           ctx.stroke()
         }
+      }
+    }
+
+    for (const fw of fakeWalls) {
+      const { col, row, dir } = fw
+      if (dir === 'v') {
+        const x = (col + 1) * CELL_PX
+        const y = row * CELL_PX
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, y + CELL_PX)
+        ctx.stroke()
+      } else {
+        const x = col * CELL_PX
+        const y = (row + 1) * CELL_PX
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x + CELL_PX, y)
+        ctx.stroke()
       }
     }
 

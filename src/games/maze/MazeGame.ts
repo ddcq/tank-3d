@@ -230,8 +230,59 @@ export class MazeGame extends GameBase {
     this.rafId = requestAnimationFrame(this.tick)
   }
 
+  private isFakeWall(col: number, row: number, dir: { dx: number; dz: number }): boolean {
+    let key: string
+    if (dir.dx === 1) {
+      key = `v:${row}:${col}`
+    } else if (dir.dx === -1) {
+      key = `v:${row}:${col - 1}`
+    } else if (dir.dz === 1) {
+      key = `h:${row}:${col}`
+    } else {
+      key = `h:${row - 1}:${col}`
+    }
+
+    for (const fw of this.mazeData.fakeWalls) {
+      const fwKey = `${fw.dir}:${fw.row}:${fw.col}`
+      if (fwKey === key) return true
+    }
+    return false
+  }
+
+  private removeFakeWall(): void {
+    if (!this.deadEndInfo) return
+    const info = this.deadEndInfo
+    const { col, row, forwardDir } = info
+    const { dx, dz } = forwardDir
+
+    let key: string
+    if (dx === 1) {
+      key = `v:${row}:${col}`
+    } else if (dx === -1) {
+      key = `v:${row}:${col - 1}`
+    } else if (dz === 1) {
+      key = `h:${row}:${col}`
+    } else {
+      key = `h:${row - 1}:${col}`
+    }
+
+    this.mazeRenderer.removeWall(key)
+    this.minimap.removeFakeWall(key)
+  }
+
   private handleDeadEndSurprise(info: DeadEndInfo): boolean {
     const key = `${info.col}:${info.row}`
+
+    if (!info.isBoundary && this.isFakeWall(info.col, info.row, info.forwardDir)) {
+      this.visitedDeadEnds.set(key, 'transparent_wall')
+      this.currentSurprise = 'transparent_wall'
+      this.deadEndInfo = info
+      this.wallFadePhase = 'fade_out'
+      this.mazeRenderer.startWallFadeOut(info.col, info.row, info.forwardDir)
+      this.audio.playConfirm()
+      return true
+    }
+
     const visited = this.visitedDeadEnds.get(key)
 
     if (visited) {
@@ -247,13 +298,6 @@ export class MazeGame extends GameBase {
           this.audio.playTeleport()
           this.doTeleport()
           return true
-        case 'transparent_wall':
-          this.currentSurprise = 'transparent_wall'
-          this.deadEndInfo = info
-          this.wallFadePhase = 'fade_out'
-          this.mazeRenderer.startWallFadeOut(info.col, info.row, info.forwardDir)
-          this.audio.playConfirm()
-          return true
       }
     }
 
@@ -262,40 +306,17 @@ export class MazeGame extends GameBase {
     this.deadEndInfo = info
     this.currentSurprise = type
 
-    if (type === 'transparent_wall') {
-      this.wallFadePhase = 'fade_out'
-      this.mazeRenderer.startWallFadeOut(info.col, info.row, info.forwardDir)
-      this.audio.playConfirm()
-    } else {
-      this.surpriseTimer = this.getSurpriseDuration(type)
-      this.executeSurpriseEffect(type, info)
-    }
+    this.surpriseTimer = this.getSurpriseDuration(type)
+    this.executeSurpriseEffect(type, info)
     return true
   }
 
-  private isDeadEnd(col: number, row: number): boolean {
-    const { width: w, height: h, vWalls, hWalls } = this.mazeData
-    let walls = 0
-    if (col <= 0 || vWalls[row * (w - 1) + (col - 1)] !== 0) walls++
-    if (col >= w - 1 || vWalls[row * (w - 1) + col] !== 0) walls++
-    if (row <= 0 || hWalls[(row - 1) * w + col] !== 0) walls++
-    if (row >= h - 1 || hWalls[row * w + col] !== 0) walls++
-    return walls >= 3
-  }
-
-  private pickSurprise(info: DeadEndInfo): SurpriseType {
+  private pickSurprise(_info: DeadEndInfo): SurpriseType {
     const types: SurpriseType[] = ['teleport', 'lantern']
     if (!this.player.hasGun) {
       types.push('gun', 'gun')
     } else {
       types.push('gun')
-    }
-    if (!info.isBoundary) {
-      const nc = info.col + info.forwardDir.dx
-      const nr = info.row + info.forwardDir.dz
-      if (!this.isDeadEnd(nc, nr)) {
-        types.push('transparent_wall')
-      }
     }
     types.push('monster', 'path')
     return types[Math.floor(Math.random() * types.length)]
@@ -444,7 +465,10 @@ export class MazeGame extends GameBase {
           this.audio.playGunShotFromFile()
           this.playGunAnim('Arms_Fire')
           this.mazeRenderer.clearEffects()
-          if (this.player.bullets > 0) this.player.bullets--
+          if (this.player.bullets > 0) {
+            this.player.bullets--
+            if (this.player.bullets === 0) this.player.hasGun = false
+          }
           this.player.resumeTurning()
         } else {
           this.audio.playDeath()
@@ -453,7 +477,7 @@ export class MazeGame extends GameBase {
         }
         break
       case 'transparent_wall':
-        this.mazeRenderer.resetWallFade()
+        this.removeFakeWall()
         this.mazeRenderer.clearEffects()
         this.player.resumeForward()
         break
@@ -506,10 +530,10 @@ export class MazeGame extends GameBase {
       }
 
       const dirs: { dx: number; dz: number; canMove: (c: number, r: number) => boolean }[] = [
-        { dx: 1, dz: 0, canMove: (c, r) => c < w - 1 && vWalls[r * (w - 1) + c] === 0 },
-        { dx: -1, dz: 0, canMove: (c, r) => c > 0 && vWalls[r * (w - 1) + (c - 1)] === 0 },
-        { dx: 0, dz: 1, canMove: (c, r) => r < h - 1 && hWalls[r * w + c] === 0 },
-        { dx: 0, dz: -1, canMove: (c, r) => r > 0 && hWalls[(r - 1) * w + c] === 0 },
+        { dx: 1, dz: 0, canMove: (c, r) => c < w - 1 && (vWalls[r * (w - 1) + c] === 0 || this.isFakeWall(c, r, { dx: 1, dz: 0 })) },
+        { dx: -1, dz: 0, canMove: (c, r) => c > 0 && (vWalls[r * (w - 1) + (c - 1)] === 0 || this.isFakeWall(c, r, { dx: -1, dz: 0 })) },
+        { dx: 0, dz: 1, canMove: (c, r) => r < h - 1 && (hWalls[r * w + c] === 0 || this.isFakeWall(c, r, { dx: 0, dz: 1 })) },
+        { dx: 0, dz: -1, canMove: (c, r) => r > 0 && (hWalls[(r - 1) * w + c] === 0 || this.isFakeWall(c, r, { dx: 0, dz: -1 })) },
       ]
 
       for (const { dx, dz, canMove } of dirs) {
@@ -682,13 +706,7 @@ export class MazeGame extends GameBase {
       }
     } else if (this.wallFadePhase === 'walk') {
       if (this.player.state !== PlayerState.SURPRISE) {
-        this.wallFadePhase = 'fade_in'
-        this.mazeRenderer.startWallFadeIn()
-      }
-    } else if (this.wallFadePhase === 'fade_in') {
-      const done = this.mazeRenderer.updateWallFade(dt)
-      if (done) {
-        this.mazeRenderer.resetWallFade()
+        this.removeFakeWall()
         this.wallFadePhase = null
         this.currentSurprise = null
         this.deadEndInfo = null
