@@ -48,6 +48,9 @@ export class MazeGame extends GameBase {
   private visibilityRadius = 2
   private guidePath: [number, number][] | null = null
   private guideTimer = 0
+  private readonly GUN_APPROACH_DURATION = 0.5
+  private gunApproachPhase: 'none' | 'approaching' = 'none'
+  private approachGun: THREE.Group | null = null
 
   async init(): Promise<void> {
     this.scene = new THREE.Scene()
@@ -162,6 +165,7 @@ export class MazeGame extends GameBase {
     this.audio.init()
     this.audio.preloadMonster()
     this.audio.preloadGunshoot()
+    this.audio.preloadReload()
     this.audio.startAmbient()
   }
 
@@ -189,6 +193,20 @@ export class MazeGame extends GameBase {
     if (this.gunMixer) {
       this.gunMixer.stopAllAction()
       this.gunMixer = null
+    }
+    if (this.approachGun) {
+      this.scene.remove(this.approachGun)
+      this.approachGun.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose()
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.dispose())
+          } else {
+            child.material.dispose()
+          }
+        }
+      })
+      this.approachGun = null
     }
     this.audio.stopAmbient()
     this.audio.dispose()
@@ -278,7 +296,7 @@ export class MazeGame extends GameBase {
 
   private getSurpriseDuration(type: SurpriseType): number {
     switch (type) {
-      case 'gun': return 0.6
+      case 'gun': return this.player.bullets === 0 ? this.GUN_APPROACH_DURATION : 0.6
       case 'monster': return 1.2
       case 'transparent_wall': return 0.5
       case 'teleport': return 1.2
@@ -292,6 +310,11 @@ export class MazeGame extends GameBase {
       case 'gun':
         this.audio.playGunPickup()
         this.mazeRenderer.showGunPickup(info.col, info.row)
+        if (this.player.bullets === 0 && this.approachGun && this.gunModel) {
+          this.gunApproachPhase = 'approaching'
+          this.approachGun.visible = true
+          this.gunModel.visible = false
+        }
         break
       case 'monster':
         if (!this.player.hasGun) {
@@ -334,10 +357,45 @@ export class MazeGame extends GameBase {
         for (const clip of gltf.animations) {
           this.gunClips.set(clip.name, clip)
         }
+        this.createApproachGun()
       },
       undefined,
       () => { },
     )
+  }
+
+  private createApproachGun(): void {
+    const group = new THREE.Group()
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.6, roughness: 0.3 })
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.7, roughness: 0.2 })
+    const magMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, metalness: 0.5, roughness: 0.4 })
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.28), bodyMat)
+    body.position.set(0, 0, 0)
+    group.add(body)
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.022, 0.22, 8), darkMat)
+    barrel.rotation.x = Math.PI / 2
+    barrel.position.set(0, 0.02, -0.24)
+    group.add(barrel)
+
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, 0.04), bodyMat)
+    handle.position.set(0, -0.065, 0.09)
+    handle.rotation.x = 0.3
+    group.add(handle)
+
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, 0.07), magMat)
+    mag.position.set(0, -0.06, 0.01)
+    group.add(mag)
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.06), darkMat)
+    stock.position.set(0, -0.01, 0.16)
+    group.add(stock)
+
+    group.scale.setScalar(0.6)
+    group.visible = false
+    this.scene.add(group)
+    this.approachGun = group
   }
 
   private playGunAnim(name: string): void {
@@ -363,6 +421,12 @@ export class MazeGame extends GameBase {
         {
           const wasEmpty = this.player.bullets === 0
           this.player.applyGunPickup()
+          this.audio.playReload()
+          if (this.gunApproachPhase !== 'none') {
+            this.gunApproachPhase = 'none'
+            if (this.approachGun) this.approachGun.visible = false
+            if (this.gunModel) this.gunModel.visible = true
+          }
           this.playGunAnim(wasEmpty ? 'Arms_fullreload' : 'Arms_notfullreload')
           this.mazeRenderer.clearEffects()
           this.player.resumeTurning()
@@ -547,7 +611,18 @@ export class MazeGame extends GameBase {
 
     this.camera.lookAt(this.smoothLookX, 1.5 + this.player.worldY, this.smoothLookZ)
 
-    if (this.gunModel) {
+    if (this.gunApproachPhase === 'approaching' && this.approachGun) {
+      const t = 1 - Math.max(0, this.surpriseTimer) / this.GUN_APPROACH_DURATION
+      const eased = t * t * (3 - 2 * t)
+      const startOffset = new THREE.Vector3(0, -0.3, -1.5)
+      const endOffset = new THREE.Vector3(0, -0.9, 0.1)
+      const offset = new THREE.Vector3().lerpVectors(startOffset, endOffset, eased)
+      offset.applyQuaternion(this.camera.quaternion)
+      this.approachGun.position.copy(this.camera.position).add(offset)
+      const startRel = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.5, -0.15))
+      const rel = new THREE.Quaternion().slerpQuaternions(startRel, ROT180, eased)
+      this.approachGun.quaternion.copy(this.camera.quaternion).multiply(rel)
+    } else if (this.gunModel) {
       const offset = new THREE.Vector3(0, -0.9, 0.1)
       offset.applyQuaternion(this.camera.quaternion)
       this.gunModel.position.copy(this.camera.position).add(offset)
@@ -663,6 +738,8 @@ export class MazeGame extends GameBase {
     this.surpriseTimer = 0
     this.guidePath = null
     this.guideTimer = 0
+    this.gunApproachPhase = 'none'
+    if (this.approachGun) this.approachGun.visible = false
     this.wallFadePhase = null
     this.visitedDeadEnds.clear()
     cancelAnimationFrame(this.rafId)

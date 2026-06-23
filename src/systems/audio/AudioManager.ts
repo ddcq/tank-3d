@@ -4,6 +4,7 @@ export class AudioManager {
   private ambientGain: GainNode | null = null
   private monsterBuffer: AudioBuffer | null = null
   private gunshotBuffer: AudioBuffer | null = null
+  private reloadBuffer: AudioBuffer | null = null
 
   init(): void {
     if (this.ctx) return
@@ -35,6 +36,12 @@ export class AudioManager {
   preloadGunshoot(): void {
     this.loadBuffer('/sounds/gunshoot.mp3')
       .then(buf => { this.gunshotBuffer = buf })
+      .catch(() => { /* fallback to synthetic sound */ })
+  }
+
+  preloadReload(): void {
+    this.loadBuffer('/sounds/reload.mp3')
+      .then(buf => { this.reloadBuffer = buf })
       .catch(() => { /* fallback to synthetic sound */ })
   }
 
@@ -278,6 +285,34 @@ export class AudioManager {
     gain.connect(ctx.destination)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.25)
+  }
+
+  playReload(): void {
+    const ctx = this.ctxOrNull()
+    if (!ctx) return
+
+    if (this.reloadBuffer) {
+      const src = ctx.createBufferSource()
+      src.buffer = this.reloadBuffer
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.8, ctx.currentTime)
+      src.connect(gain)
+      gain.connect(ctx.destination)
+      src.start(ctx.currentTime)
+    } else {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(800, ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1)
+      osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.2)
+      gain.gain.setValueAtTime(0.08, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.3)
+    }
   }
 
   playMonster(): void {
