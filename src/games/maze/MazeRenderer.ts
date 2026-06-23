@@ -38,6 +38,8 @@ export class MazeRenderer {
   private readonly FADE_DURATION = 0.5
   private effectMeshes: THREE.Mesh[] = []
   private effectLights: THREE.PointLight[] = []
+  private winActive = false
+  private winParticles: THREE.Mesh[] = []
 
 
   constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) { }
@@ -405,6 +407,8 @@ export class MazeRenderer {
   }
 
   clearEffects(): void {
+    this.winActive = false
+    this.winParticles = []
     for (const mesh of this.effectMeshes) {
       this.group.remove(mesh)
       mesh.geometry.dispose()
@@ -420,6 +424,72 @@ export class MazeRenderer {
       light.dispose()
     }
     this.effectLights = []
+  }
+
+  getExitWorldPosition(): { x: number; z: number } {
+    return this.gridToWorld(this.maze.endCol, this.maze.endRow)
+  }
+
+  triggerWinEffect(): void {
+    this.winActive = true
+    const pos = this.getExitWorldPosition()
+
+    for (let i = 0; i < 8; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.1, 0.15, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xffd700,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+        }),
+      )
+      const angle = (i / 8) * Math.PI * 2
+      ring.position.set(pos.x + Math.cos(angle) * 0.3, 0.1, pos.z + Math.sin(angle) * 0.3)
+      ring.rotation.x = -Math.PI / 2
+      ring.userData.phase = 0
+      this.group.add(ring)
+      this.winParticles.push(ring)
+      this.effectMeshes.push(ring)
+    }
+
+    const goldLight = new THREE.PointLight(0xffdd44, 0, 20, 2)
+    goldLight.position.set(pos.x, 2, pos.z)
+    this.group.add(goldLight)
+    this.effectLights.push(goldLight)
+  }
+
+  updateWinEffect(dt: number): void {
+    if (!this.winActive) return
+    const elapsed = performance.now() * 0.001
+    const pos = this.getExitWorldPosition()
+
+    const mat = this.endMarker.material as THREE.MeshBasicMaterial
+    mat.color.setHSL(0.1, 1, 0.6)
+    mat.opacity = 0.9
+    const scale = 1 + Math.sin(elapsed * 3) * 0.2
+    this.endMarker.scale.set(scale, 1, scale)
+
+    this.exitGlow.color.setHSL(0.12, 1, 0.5)
+    this.exitGlow.intensity = 3 + Math.sin(elapsed * 5) * 2
+
+    for (let i = 0; i < this.winParticles.length; i++) {
+      const ring = this.winParticles[i]
+      const phase = ring.userData.phase as number + dt * 0.4
+      ring.userData.phase = phase
+      const angle = (i / this.winParticles.length) * Math.PI * 2 + Math.sin(phase) * 0.5
+      const radius = 0.3 + phase * 0.15
+      ring.position.x = pos.x + Math.cos(angle) * radius
+      ring.position.z = pos.z + Math.sin(angle) * radius
+      const ringMat = ring.material as THREE.MeshBasicMaterial
+      ringMat.opacity = Math.min(0.6, phase * 0.15)
+      ring.scale.setScalar(1 + phase * 0.1)
+    }
+
+    const light = this.effectLights[this.effectLights.length - 1]
+    if (light) {
+      light.intensity = 4 + Math.sin(elapsed * 4) * 2
+    }
   }
 
   gridToWorld(col: number, row: number): { x: number; z: number } {

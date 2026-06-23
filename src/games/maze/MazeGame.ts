@@ -28,6 +28,9 @@ export class MazeGame extends GameBase {
   private running = false
   private clock = new THREE.Clock()
   private winHandled = false
+  private readonly WIN_ANIM_DURATION = 2.5
+  private winAnimTimer = 0
+  private winStartCamY = 0
   private keysDown = new Set<string>()
   private audio = new AudioManager()
 
@@ -556,10 +559,41 @@ export class MazeGame extends GameBase {
   private update(dt: number): void {
     if (this.player.state === PlayerState.WIN && !this.winHandled) {
       this.winHandled = true
-      this.running = false
-      cancelAnimationFrame(this.rafId)
-      this.showWinMenu()
-      return
+      this.winAnimTimer = this.WIN_ANIM_DURATION
+      this.winStartCamY = this.camera.position.y
+      this.mazeRenderer.triggerWinEffect()
+      this.mazeRenderer.updateWinEffect(0)
+      this.audio.playWin()
+      if (this.gunModel) this.gunModel.visible = false
+    }
+
+    if (this.player.state === PlayerState.WIN) {
+      if (this.winAnimTimer > 0) {
+        this.winAnimTimer -= dt
+        const t = 1 - this.winAnimTimer / this.WIN_ANIM_DURATION
+        const eased = t * t * (3 - 2 * t)
+        this.camera.position.y = this.winStartCamY + 2.0 * eased
+        this.camera.position.y += Math.sin(t * Math.PI) * 0.3
+        const exitPos = this.mazeRenderer.getExitWorldPosition()
+        this.camera.lookAt(exitPos.x, 0, exitPos.z)
+        this.mazeRenderer.updateWinEffect(dt)
+        this.hudSurprise.textContent = 'Victoire !'
+        this.hudSurprise.style.display = 'block'
+        this.hudSurprise.style.color = '#ffdd44'
+        this.hudSurprise.style.fontSize = '48px'
+        this.hudWeapon.textContent = this.player.hasGun
+          ? `Armé · ${this.player.bullets} balle${this.player.bullets > 1 ? 's' : ''}`
+          : 'Non armé'
+        if (this.gunModel) this.gunModel.visible = false
+        this.mazeRenderer.updateLamps(dt)
+        this.renderer.render(this.scene, this.camera)
+        return
+      } else {
+        this.running = false
+        cancelAnimationFrame(this.rafId)
+        this.showWinMenu()
+        return
+      }
     }
 
     if (this.currentSurprise && this.surpriseTimer > 0) {
@@ -578,8 +612,6 @@ export class MazeGame extends GameBase {
         this.minimap.clearGuidePath()
       }
     }
-
-    if (this.player.state === PlayerState.WIN) return
 
     const yaw = this.headTracking.getIsTracking() ? -this.headTracking.getHeadYaw() : 0
     const pitch = this.headTracking.getIsTracking() ? this.headTracking.getHeadPitch() : 0
