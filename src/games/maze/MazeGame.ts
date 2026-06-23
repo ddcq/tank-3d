@@ -30,7 +30,6 @@ export class MazeGame extends GameBase {
   private winHandled = false
   private keysDown = new Set<string>()
   private audio = new AudioManager()
-  private audioInitialized = false
 
   private gunModel: THREE.Group | null = null
   private gunMixer: THREE.AnimationMixer | null = null
@@ -67,6 +66,11 @@ export class MazeGame extends GameBase {
     this.renderer.toneMappingExposure = 1.0
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.container.appendChild(this.renderer.domElement)
+
+    this.renderer.domElement.addEventListener('click', () => this.audio.userGesture())
+    this.renderer.domElement.addEventListener('touchstart', () => this.audio.userGesture())
+
+    this.initAudio()
 
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100)
 
@@ -767,10 +771,7 @@ export class MazeGame extends GameBase {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (!this.audioInitialized) {
-      this.initAudio()
-      this.audioInitialized = true
-    }
+    this.audio.userGesture()
     this.keysDown.add(e.key)
 
     if (e.key === 'r' || e.key === 'R') {

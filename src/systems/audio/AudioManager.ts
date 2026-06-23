@@ -48,9 +48,15 @@ export class AudioManager {
   private ctxOrNull(): AudioContext | null {
     if (!this.ctx) return null
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume()
+      this.ctx.resume().catch(() => {})
     }
     return this.ctx
+  }
+
+  userGesture(): void {
+    if (this.ctx?.state === 'suspended') {
+      this.ctx.resume().catch(() => {})
+    }
   }
 
   private noise(ctx: AudioContext, dur: number): AudioBufferSourceNode {
