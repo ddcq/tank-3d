@@ -78,31 +78,31 @@ export class MazeMinimap {
     ctx.strokeStyle = '#3a3a3a'
     ctx.lineWidth = 2
 
+    ctx.beginPath()
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width - 1; col++) {
         if (vWalls[row * (width - 1) + col] === 1) {
           const x = (col + 1) * CELL_PX
           const y = row * CELL_PX
-          ctx.beginPath()
           ctx.moveTo(x, y)
           ctx.lineTo(x, y + CELL_PX)
-          ctx.stroke()
         }
       }
     }
+    ctx.stroke()
 
+    ctx.beginPath()
     for (let row = 0; row < height - 1; row++) {
       for (let col = 0; col < width; col++) {
         if (hWalls[row * width + col] === 1) {
           const x = col * CELL_PX
           const y = (row + 1) * CELL_PX
-          ctx.beginPath()
           ctx.moveTo(x, y)
           ctx.lineTo(x + CELL_PX, y)
-          ctx.stroke()
         }
       }
     }
+    ctx.stroke()
 
     for (const fw of fakeWalls) {
       const { col, row, dir } = fw
@@ -123,8 +123,6 @@ export class MazeMinimap {
       }
     }
 
-    ctx.strokeStyle = '#3a3a3a'
-    ctx.lineWidth = 2
     ctx.strokeRect(0, 0, width * CELL_PX, height * CELL_PX)
 
     this.wallsCacheDirty = false
@@ -218,8 +216,6 @@ export class MazeMinimap {
     ctx.fillRect(0, 0, cw, ch)
     ctx.restore()
   }
-
-
 
   dispose(): void {
     this.canvas.remove()
