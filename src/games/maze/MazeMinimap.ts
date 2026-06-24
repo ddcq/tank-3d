@@ -10,6 +10,9 @@ export class MazeMinimap {
   private ctx: CanvasRenderingContext2D
   private visibilityRadius = DEFAULT_RADIUS
   private guidePath: [number, number][] | null = null
+  private wallsCanvas: HTMLCanvasElement
+  private wallsCtx: CanvasRenderingContext2D
+  private wallsCacheDirty = true
 
   constructor(private readonly maze: MazeData) {
     const w = maze.width * CELL_PX + PADDING * 2
@@ -34,6 +37,12 @@ export class MazeMinimap {
     ].join(';')
 
     this.ctx = this.canvas.getContext('2d')!
+
+    // Create offscreen canvas for caching wall rendering
+    this.wallsCanvas = document.createElement('canvas')
+    this.wallsCanvas.width = maze.width * CELL_PX
+    this.wallsCanvas.height = maze.height * CELL_PX
+    this.wallsCtx = this.wallsCanvas.getContext('2d')!
   }
 
   get element(): HTMLCanvasElement {
@@ -56,7 +65,69 @@ export class MazeMinimap {
     const idx = this.maze.fakeWalls.findIndex(fw => `${fw.dir}:${fw.row}:${fw.col}` === key)
     if (idx !== -1) {
       this.maze.fakeWalls.splice(idx, 1)
+      this.wallsCacheDirty = true
     }
+  }
+
+  private renderWallsToCache(): void {
+    const { width, height, vWalls, hWalls, fakeWalls } = this.maze
+    const ctx = this.wallsCtx
+
+    ctx.clearRect(0, 0, this.wallsCanvas.width, this.wallsCanvas.height)
+
+    ctx.strokeStyle = '#3a3a3a'
+    ctx.lineWidth = 2
+
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width - 1; col++) {
+        if (vWalls[row * (width - 1) + col] === 1) {
+          const x = (col + 1) * CELL_PX
+          const y = row * CELL_PX
+          ctx.beginPath()
+          ctx.moveTo(x, y)
+          ctx.lineTo(x, y + CELL_PX)
+          ctx.stroke()
+        }
+      }
+    }
+
+    for (let row = 0; row < height - 1; row++) {
+      for (let col = 0; col < width; col++) {
+        if (hWalls[row * width + col] === 1) {
+          const x = col * CELL_PX
+          const y = (row + 1) * CELL_PX
+          ctx.beginPath()
+          ctx.moveTo(x, y)
+          ctx.lineTo(x + CELL_PX, y)
+          ctx.stroke()
+        }
+      }
+    }
+
+    for (const fw of fakeWalls) {
+      const { col, row, dir } = fw
+      if (dir === 'v') {
+        const x = (col + 1) * CELL_PX
+        const y = row * CELL_PX
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, y + CELL_PX)
+        ctx.stroke()
+      } else {
+        const x = col * CELL_PX
+        const y = (row + 1) * CELL_PX
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x + CELL_PX, y)
+        ctx.stroke()
+      }
+    }
+
+    ctx.strokeStyle = '#3a3a3a'
+    ctx.lineWidth = 2
+    ctx.strokeRect(0, 0, width * CELL_PX, height * CELL_PX)
+
+    this.wallsCacheDirty = false
   }
 
   update(player: MazePlayerController): void {
@@ -79,7 +150,13 @@ export class MazeMinimap {
       }
     }
 
-    this.drawWallsContent(ctx)
+    // Render walls to cache if needed (first time or if walls changed)
+    if (this.wallsCacheDirty) {
+      this.renderWallsToCache()
+    }
+
+    // Composite the cached walls onto the main canvas
+    ctx.drawImage(this.wallsCanvas, 0, 0)
 
     if (this.guidePath && this.guidePath.length > 1) {
       ctx.save()
@@ -142,61 +219,7 @@ export class MazeMinimap {
     ctx.restore()
   }
 
-  private drawWallsContent(ctx: CanvasRenderingContext2D): void {
-    const { width, height, vWalls, hWalls, fakeWalls } = this.maze
 
-    ctx.strokeStyle = '#3a3a3a'
-    ctx.lineWidth = 2
-
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width - 1; col++) {
-        if (vWalls[row * (width - 1) + col] === 1) {
-          const x = (col + 1) * CELL_PX
-          const y = row * CELL_PX
-          ctx.beginPath()
-          ctx.moveTo(x, y)
-          ctx.lineTo(x, y + CELL_PX)
-          ctx.stroke()
-        }
-      }
-    }
-
-    for (let row = 0; row < height - 1; row++) {
-      for (let col = 0; col < width; col++) {
-        if (hWalls[row * width + col] === 1) {
-          const x = col * CELL_PX
-          const y = (row + 1) * CELL_PX
-          ctx.beginPath()
-          ctx.moveTo(x, y)
-          ctx.lineTo(x + CELL_PX, y)
-          ctx.stroke()
-        }
-      }
-    }
-
-    for (const fw of fakeWalls) {
-      const { col, row, dir } = fw
-      if (dir === 'v') {
-        const x = (col + 1) * CELL_PX
-        const y = row * CELL_PX
-        ctx.beginPath()
-        ctx.moveTo(x, y)
-        ctx.lineTo(x, y + CELL_PX)
-        ctx.stroke()
-      } else {
-        const x = col * CELL_PX
-        const y = (row + 1) * CELL_PX
-        ctx.beginPath()
-        ctx.moveTo(x, y)
-        ctx.lineTo(x + CELL_PX, y)
-        ctx.stroke()
-      }
-    }
-
-    ctx.strokeStyle = '#3a3a3a'
-    ctx.lineWidth = 2
-    ctx.strokeRect(0, 0, width * CELL_PX, height * CELL_PX)
-  }
 
   dispose(): void {
     this.canvas.remove()
