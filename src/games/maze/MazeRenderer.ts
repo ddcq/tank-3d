@@ -94,7 +94,7 @@ export class MazeRenderer {
         const x = col * CELL + HALF - width * HALF
         const z = row * CELL + HALF
 
-        const floor = new THREE.Mesh(floorGeo.clone(), this.floorMat)
+        const floor = new THREE.Mesh(floorGeo, this.floorMat)
         floor.position.set(x, 0, z)
         floor.receiveShadow = true
         this.group.add(floor)
@@ -107,7 +107,7 @@ export class MazeRenderer {
         const x = (col + 1) * CELL - width * HALF
         const z = row * CELL + HALF
         const mat = this.wallMat[Math.floor(Math.random() * this.wallMat.length)]
-        const wall = new THREE.Mesh(wallGeoV.clone(), mat)
+        const wall = new THREE.Mesh(wallGeoV, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -122,7 +122,7 @@ export class MazeRenderer {
         const x = col * CELL + HALF - width * HALF
         const z = (row + 1) * CELL
         const mat = this.wallMat[Math.floor(Math.random() * this.wallMat.length)]
-        const wall = new THREE.Mesh(wallGeoH.clone(), mat)
+        const wall = new THREE.Mesh(wallGeoH, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -149,7 +149,7 @@ export class MazeRenderer {
       if (dir === 'v') {
         const x = (col + 1) * CELL - width * HALF
         const z = row * CELL + HALF
-        const wall = new THREE.Mesh(wallGeoV.clone(), mat)
+        const wall = new THREE.Mesh(wallGeoV, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -158,7 +158,7 @@ export class MazeRenderer {
       } else {
         const x = col * CELL + HALF - width * HALF
         const z = (row + 1) * CELL
-        const wall = new THREE.Mesh(wallGeoH.clone(), mat)
+        const wall = new THREE.Mesh(wallGeoH, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
