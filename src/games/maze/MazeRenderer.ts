@@ -15,6 +15,7 @@ import {
   PlaneGeometry,
   DoubleSide,
   RingGeometry,
+  Texture,
 } from 'three'
 import type { MazeData } from './MazeGenerator'
 
@@ -30,6 +31,7 @@ export class MazeRenderer {
   readonly group = new Group()
   private wallMat: MeshStandardMaterial[] = []
   private floorMat!: MeshStandardMaterial
+  private textures: Texture[] = []
   private startMarker!: Mesh
   private endMarker!: Mesh
   private exitGlow!: PointLight
@@ -70,7 +72,9 @@ export class MazeRenderer {
       loader.loadAsync('/textures/brick_171.jpg'),
       loader.loadAsync('/textures/brick_172.jpg'),
       loader.loadAsync('/textures/concrete.jpg'),
-    ]);
+    ])
+
+    this.textures.push(brickA, brickB, brickC, brickD, concrete);
 
     [brickA, brickB, brickC, brickD].forEach(t => {
       t.wrapS = t.wrapT = RepeatWrapping
@@ -588,5 +592,9 @@ export class MazeRenderer {
         }
       }
     })
+    for (const texture of this.textures) {
+      texture.dispose()
+    }
+    this.textures = []
   }
 }
