@@ -1,4 +1,23 @@
-import * as THREE from 'three'
+import {
+  Scene,
+  WebGLRenderer,
+  PerspectiveCamera,
+  Color,
+  PCFSoftShadowMap,
+  ACESFilmicToneMapping,
+  Clock,
+  Vector3,
+  Quaternion,
+  Group,
+  AnimationMixer,
+  AnimationClip,
+  LoopOnce,
+  Mesh,
+  MeshStandardMaterial,
+  BoxGeometry,
+  CylinderGeometry,
+  Euler,
+} from 'three'
 import { GameBase } from '../../core/GameBase'
 import { generateMaze, type MazeData } from './MazeGenerator'
 import { MazeRenderer } from './MazeRenderer'
@@ -11,22 +30,22 @@ import { MainMenu } from '../../ui/MainMenu'
 
 type SurpriseType = 'gun' | 'monster' | 'transparent_wall' | 'teleport' | 'lantern' | 'path'
 
-const ROT180 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
+const ROT180 = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI)
 
 export class MazeGame extends GameBase {
   readonly id = 'maze'
   readonly label = 'Labyrinthe 3D'
 
-  private scene!: THREE.Scene
-  private renderer!: THREE.WebGLRenderer
-  private camera!: THREE.PerspectiveCamera
+  private scene!: Scene
+  private renderer!: WebGLRenderer
+  private camera!: PerspectiveCamera
   private mazeRenderer!: MazeRenderer
   private player!: MazePlayerController
   private minimap!: MazeMinimap
   private headTracking!: HeadTrackingSystemImpl
   private rafId = 0
   private running = false
-  private clock = new THREE.Clock()
+  private clock = new Clock()
   private winHandled = false
   private readonly WIN_ANIM_DURATION = 2.5
   private winAnimTimer = 0
@@ -34,9 +53,9 @@ export class MazeGame extends GameBase {
   private keysDown = new Set<string>()
   private audio = new AudioManager()
 
-  private gunModel: THREE.Group | null = null
-  private gunMixer: THREE.AnimationMixer | null = null
-  private gunClips = new Map<string, THREE.AnimationClip>()
+  private gunModel: Group | null = null
+  private gunMixer: AnimationMixer | null = null
+  private gunClips = new Map<string, AnimationClip>()
   private smoothLookX = 0
   private smoothLookZ = 0
   private surpriseTimer = 0
@@ -52,22 +71,22 @@ export class MazeGame extends GameBase {
   private guideTimer = 0
   private readonly GUN_APPROACH_DURATION = 0.5
   private gunApproachPhase: 'none' | 'approaching' = 'none'
-  private approachGun: THREE.Group | null = null
+  private approachGun: Group | null = null
   private handleAudioClick = () => this.audio.userGesture()
   private handleAudioTouch = () => this.audio.userGesture()
 
   async init(): Promise<void> {
-    this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x111118)
+    this.scene = new Scene()
+    this.scene.background = new Color(0x111118)
 
-    this.renderer = new THREE.WebGLRenderer({
+    this.renderer = new WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
     })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.shadowMap.type = PCFSoftShadowMap
+    this.renderer.toneMapping = ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.0
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.container.appendChild(this.renderer.domElement)
@@ -77,7 +96,7 @@ export class MazeGame extends GameBase {
 
     this.initAudio()
 
-    this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100)
+    this.camera = new PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100)
 
     this.loadGunModel()
 
@@ -208,7 +227,7 @@ export class MazeGame extends GameBase {
     if (this.approachGun) {
       this.scene.remove(this.approachGun)
       this.approachGun.traverse(child => {
-        if (child instanceof THREE.Mesh) {
+        if (child instanceof Mesh) {
           child.geometry.dispose()
           if (Array.isArray(child.material)) {
             child.material.forEach(m => m.dispose())
@@ -385,7 +404,7 @@ export class MazeGame extends GameBase {
         model.visible = false
         this.scene.add(model)
         this.gunModel = model
-        this.gunMixer = new THREE.AnimationMixer(model)
+        this.gunMixer = new AnimationMixer(model)
         for (const clip of gltf.animations) {
           this.gunClips.set(clip.name, clip)
         }
@@ -397,30 +416,30 @@ export class MazeGame extends GameBase {
   }
 
   private createApproachGun(): void {
-    const group = new THREE.Group()
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.6, roughness: 0.3 })
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.7, roughness: 0.2 })
-    const magMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, metalness: 0.5, roughness: 0.4 })
+    const group = new Group()
+    const bodyMat = new MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.6, roughness: 0.3 })
+    const darkMat = new MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.7, roughness: 0.2 })
+    const magMat = new MeshStandardMaterial({ color: 0x3a3a3a, metalness: 0.5, roughness: 0.4 })
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.28), bodyMat)
+    const body = new Mesh(new BoxGeometry(0.05, 0.08, 0.28), bodyMat)
     body.position.set(0, 0, 0)
     group.add(body)
 
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.022, 0.22, 8), darkMat)
+    const barrel = new Mesh(new CylinderGeometry(0.015, 0.022, 0.22, 8), darkMat)
     barrel.rotation.x = Math.PI / 2
     barrel.position.set(0, 0.02, -0.24)
     group.add(barrel)
 
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, 0.04), bodyMat)
+    const handle = new Mesh(new BoxGeometry(0.035, 0.09, 0.04), bodyMat)
     handle.position.set(0, -0.065, 0.09)
     handle.rotation.x = 0.3
     group.add(handle)
 
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, 0.07), magMat)
+    const mag = new Mesh(new BoxGeometry(0.025, 0.09, 0.07), magMat)
     mag.position.set(0, -0.06, 0.01)
     group.add(mag)
 
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.06), darkMat)
+    const stock = new Mesh(new BoxGeometry(0.03, 0.04, 0.06), darkMat)
     stock.position.set(0, -0.01, 0.16)
     group.add(stock)
 
@@ -436,7 +455,7 @@ export class MazeGame extends GameBase {
     const action = this.gunMixer.clipAction(clip)
     action.stop().reset()
     action.clampWhenFinished = true
-    action.setLoop(THREE.LoopOnce, 1)
+    action.setLoop(LoopOnce, 1)
     action.play()
   }
 
@@ -678,16 +697,16 @@ export class MazeGame extends GameBase {
     if (this.gunApproachPhase === 'approaching' && this.approachGun) {
       const t = 1 - Math.max(0, this.surpriseTimer) / this.GUN_APPROACH_DURATION
       const eased = t * t * (3 - 2 * t)
-      const startOffset = new THREE.Vector3(0, -0.3, -1.5)
-      const endOffset = new THREE.Vector3(0, -0.9, 0.1)
-      const offset = new THREE.Vector3().lerpVectors(startOffset, endOffset, eased)
+      const startOffset = new Vector3(0, -0.3, -1.5)
+      const endOffset = new Vector3(0, -0.9, 0.1)
+      const offset = new Vector3().lerpVectors(startOffset, endOffset, eased)
       offset.applyQuaternion(this.camera.quaternion)
       this.approachGun.position.copy(this.camera.position).add(offset)
-      const startRel = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.5, -0.15))
-      const rel = new THREE.Quaternion().slerpQuaternions(startRel, ROT180, eased)
+      const startRel = new Quaternion().setFromEuler(new Euler(0, 0.5, -0.15))
+      const rel = new Quaternion().slerpQuaternions(startRel, ROT180, eased)
       this.approachGun.quaternion.copy(this.camera.quaternion).multiply(rel)
     } else if (this.gunModel) {
-      const offset = new THREE.Vector3(0, -0.9, 0.1)
+      const offset = new Vector3(0, -0.9, 0.1)
       offset.applyQuaternion(this.camera.quaternion)
       this.gunModel.position.copy(this.camera.position).add(offset)
       this.gunModel.quaternion.copy(this.camera.quaternion)
@@ -810,7 +829,7 @@ export class MazeGame extends GameBase {
     document.getElementById('maze-hud-styles')?.remove()
 
     this.init().then(() => {
-      this.clock = new THREE.Clock()
+      this.clock = new Clock()
       this.clock.start()
       this.start()
     })

@@ -1,4 +1,21 @@
-import * as THREE from 'three'
+import {
+  Scene,
+  Group,
+  MeshStandardMaterial,
+  Mesh,
+  PointLight,
+  HemisphereLight,
+  TextureLoader,
+  RepeatWrapping,
+  BoxGeometry,
+  SphereGeometry,
+  MeshBasicMaterial,
+  CylinderGeometry,
+  CanvasTexture,
+  PlaneGeometry,
+  DoubleSide,
+  RingGeometry,
+} from 'three'
 import type { MazeData } from './MazeGenerator'
 
 
@@ -10,13 +27,13 @@ const LAMP_DIST = 5.5
 const LAMP_RANGE = 3
 
 export class MazeRenderer {
-  readonly group = new THREE.Group()
-  private wallMat: THREE.MeshStandardMaterial[] = []
-  private floorMat!: THREE.MeshStandardMaterial
-  private startMarker!: THREE.Mesh
-  private endMarker!: THREE.Mesh
-  private exitGlow!: THREE.PointLight
-  private hemiLight!: THREE.HemisphereLight
+  readonly group = new Group()
+  private wallMat: MeshStandardMaterial[] = []
+  private floorMat!: MeshStandardMaterial
+  private startMarker!: Mesh
+  private endMarker!: Mesh
+  private exitGlow!: PointLight
+  private hemiLight!: HemisphereLight
   private lampPhase = 0
   private lampSpeed = 3
   private lampSlots: {
@@ -25,27 +42,27 @@ export class MazeRenderer {
     x: number
     y: number
     z: number
-    light: THREE.PointLight | null
+    light: PointLight | null
   }[] = []
-  private wallMeshes = new Map<string, THREE.Mesh>()
+  private wallMeshes = new Map<string, Mesh>()
   private fadingWall: {
-    mesh: THREE.Mesh
+    mesh: Mesh
     origTransparent: boolean
     origOpacity: number
     stage: 'out' | 'in'
     progress: number
   } | null = null
   private readonly FADE_DURATION = 0.5
-  private effectMeshes: THREE.Mesh[] = []
-  private effectLights: THREE.PointLight[] = []
+  private effectMeshes: Mesh[] = []
+  private effectLights: PointLight[] = []
   private winActive = false
-  private winParticles: THREE.Mesh[] = []
+  private winParticles: Mesh[] = []
 
 
-  constructor(private readonly scene: THREE.Scene, private readonly maze: MazeData) { }
+  constructor(private readonly scene: Scene, private readonly maze: MazeData) { }
 
   async init(): Promise<void> {
-    const loader = new THREE.TextureLoader()
+    const loader = new TextureLoader()
 
     const [brickA, brickB, brickC, brickD, concrete] = await Promise.all([
       loader.loadAsync('/textures/brick_156.jpg'),
@@ -56,22 +73,22 @@ export class MazeRenderer {
     ]);
 
     [brickA, brickB, brickC, brickD].forEach(t => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.wrapS = t.wrapT = RepeatWrapping
       t.repeat.set(1, 1.5)
       t.anisotropy = 4
     })
 
-    this.wallMat = [brickA, brickB, brickC, brickD].map(t => new THREE.MeshStandardMaterial({
+    this.wallMat = [brickA, brickB, brickC, brickD].map(t => new MeshStandardMaterial({
       map: t,
       roughness: 0.85,
       metalness: 0.05,
     }))
 
-    concrete.wrapS = concrete.wrapT = THREE.RepeatWrapping
+    concrete.wrapS = concrete.wrapT = RepeatWrapping
     concrete.repeat.set(5, 15)
     concrete.anisotropy = 4
 
-    this.floorMat = new THREE.MeshStandardMaterial({
+    this.floorMat = new MeshStandardMaterial({
       map: concrete,
       roughness: 0.95,
     })
@@ -85,16 +102,16 @@ export class MazeRenderer {
   private buildGeometry(): void {
     const { width, height, vWalls, hWalls } = this.maze
 
-    const wallGeoV = new THREE.BoxGeometry(WALL_THICK, WALL_H, CELL)
-    const wallGeoH = new THREE.BoxGeometry(CELL, WALL_H, WALL_THICK)
-    const floorGeo = new THREE.BoxGeometry(CELL, 0.15, CELL)
+    const wallGeoV = new BoxGeometry(WALL_THICK, WALL_H, CELL)
+    const wallGeoH = new BoxGeometry(CELL, WALL_H, WALL_THICK)
+    const floorGeo = new BoxGeometry(CELL, 0.15, CELL)
 
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const x = col * CELL + HALF - width * HALF
         const z = row * CELL + HALF
 
-        const floor = new THREE.Mesh(floorGeo, this.floorMat)
+        const floor = new Mesh(floorGeo, this.floorMat)
         floor.position.set(x, 0, z)
         floor.receiveShadow = true
         this.group.add(floor)
@@ -107,7 +124,7 @@ export class MazeRenderer {
         const x = (col + 1) * CELL - width * HALF
         const z = row * CELL + HALF
         const mat = this.wallMat[Math.floor(Math.random() * this.wallMat.length)]
-        const wall = new THREE.Mesh(wallGeoV, mat)
+        const wall = new Mesh(wallGeoV, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -122,7 +139,7 @@ export class MazeRenderer {
         const x = col * CELL + HALF - width * HALF
         const z = (row + 1) * CELL
         const mat = this.wallMat[Math.floor(Math.random() * this.wallMat.length)]
-        const wall = new THREE.Mesh(wallGeoH, mat)
+        const wall = new Mesh(wallGeoH, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -138,8 +155,8 @@ export class MazeRenderer {
 
   private buildFakeWalls(): void {
     const { width, fakeWalls } = this.maze
-    const wallGeoV = new THREE.BoxGeometry(WALL_THICK, WALL_H, CELL)
-    const wallGeoH = new THREE.BoxGeometry(CELL, WALL_H, WALL_THICK)
+    const wallGeoV = new BoxGeometry(WALL_THICK, WALL_H, CELL)
+    const wallGeoH = new BoxGeometry(CELL, WALL_H, WALL_THICK)
 
     for (const fw of fakeWalls) {
       const { col, row, dir } = fw
@@ -149,7 +166,7 @@ export class MazeRenderer {
       if (dir === 'v') {
         const x = (col + 1) * CELL - width * HALF
         const z = row * CELL + HALF
-        const wall = new THREE.Mesh(wallGeoV, mat)
+        const wall = new Mesh(wallGeoV, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -158,7 +175,7 @@ export class MazeRenderer {
       } else {
         const x = col * CELL + HALF - width * HALF
         const z = (row + 1) * CELL
-        const wall = new THREE.Mesh(wallGeoH, mat)
+        const wall = new Mesh(wallGeoH, mat)
         wall.position.set(x, WALL_H / 2, z)
         wall.castShadow = true
         wall.receiveShadow = true
@@ -171,8 +188,8 @@ export class MazeRenderer {
   private buildLamps(): void {
     const { width, height, vWalls, hWalls } = this.maze
 
-    const bulbGeo = new THREE.SphereGeometry(0.1, 8, 8)
-    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffddaa })
+    const bulbGeo = new SphereGeometry(0.1, 8, 8)
+    const bulbMat = new MeshBasicMaterial({ color: 0xffddaa })
 
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
@@ -187,7 +204,7 @@ export class MazeRenderer {
         const z = row * CELL + HALF
         const y = WALL_H - 0.15
 
-        const bulb = new THREE.Mesh(bulbGeo, bulbMat)
+        const bulb = new Mesh(bulbGeo, bulbMat)
         bulb.position.set(x, y, z)
         this.group.add(bulb)
 
@@ -197,7 +214,7 @@ export class MazeRenderer {
   }
 
   private buildLighting(): void {
-    this.hemiLight = new THREE.HemisphereLight(0x446688, 0x222244, 1.2)
+    this.hemiLight = new HemisphereLight(0x446688, 0x222244, 1.2)
     this.group.add(this.hemiLight)
   }
 
@@ -205,12 +222,12 @@ export class MazeRenderer {
     const { width, height } = this.maze
     const w = width * CELL
     const h = height * CELL
-    const geoTop = new THREE.BoxGeometry(w + CELL * 2, WALL_H, CELL)
-    const geoLeft = new THREE.BoxGeometry(CELL, WALL_H, h + CELL * 2)
+    const geoTop = new BoxGeometry(w + CELL * 2, WALL_H, CELL)
+    const geoLeft = new BoxGeometry(CELL, WALL_H, h + CELL * 2)
 
     const mat = this.wallMat[0]
 
-    const top = new THREE.Mesh(geoTop, mat)
+    const top = new Mesh(geoTop, mat)
     top.position.set(0, WALL_H / 2, -CELL / 2)
     top.castShadow = true
     this.group.add(top)
@@ -219,7 +236,7 @@ export class MazeRenderer {
     bottom.position.set(0, WALL_H / 2, h + CELL / 2)
     this.group.add(bottom)
 
-    const left = new THREE.Mesh(geoLeft, mat)
+    const left = new Mesh(geoLeft, mat)
     left.position.set(-w / 2 - CELL / 2, WALL_H / 2, h / 2)
     left.castShadow = true
     this.group.add(left)
@@ -234,13 +251,13 @@ export class MazeRenderer {
     const x = startCol * CELL + HALF - width * HALF
     const z = startRow * CELL + HALF
 
-    const geo = new THREE.BoxGeometry(CELL * 0.4, 0.02, CELL * 0.4)
-    const mat = new THREE.MeshBasicMaterial({
+    const geo = new BoxGeometry(CELL * 0.4, 0.02, CELL * 0.4)
+    const mat = new MeshBasicMaterial({
       color: 0x224422,
       transparent: true,
       opacity: 0.3,
     })
-    this.startMarker = new THREE.Mesh(geo, mat)
+    this.startMarker = new Mesh(geo, mat)
     this.startMarker.position.set(x, 0.01, z)
     this.group.add(this.startMarker)
   }
@@ -250,18 +267,18 @@ export class MazeRenderer {
     const x = endCol * CELL + HALF - width * HALF
     const z = endRow * CELL + HALF
 
-    const geo = new THREE.BoxGeometry(CELL * 0.6, 0.1, CELL * 0.6)
-    const mat = new THREE.MeshBasicMaterial({
+    const geo = new BoxGeometry(CELL * 0.6, 0.1, CELL * 0.6)
+    const mat = new MeshBasicMaterial({
       color: 0xff2200,
       transparent: true,
       opacity: 0.7,
     })
-    this.endMarker = new THREE.Mesh(geo, mat)
+    this.endMarker = new Mesh(geo, mat)
     this.endMarker.position.set(x, 0.05, z)
     this.endMarker.userData.phase = 0
     this.group.add(this.endMarker)
 
-    this.exitGlow = new THREE.PointLight(0xff4400, 1.5, 12, 2)
+    this.exitGlow = new PointLight(0xff4400, 1.5, 12, 2)
     this.exitGlow.position.set(x, 1.5, z)
     this.group.add(this.exitGlow)
   }
@@ -272,7 +289,7 @@ export class MazeRenderer {
       const shouldBeOn = dist <= LAMP_RANGE
 
       if (shouldBeOn && !slot.light) {
-        const light = new THREE.PointLight(0xffddaa, 2, LAMP_DIST, 2)
+        const light = new PointLight(0xffddaa, 2, LAMP_DIST, 2)
         light.position.set(slot.x, slot.y, slot.z)
         this.group.add(light)
         slot.light = light
@@ -297,7 +314,7 @@ export class MazeRenderer {
     const phase = (this.endMarker.userData.phase as number) + dt * 3
     this.endMarker.userData.phase = phase
     const pulse = 0.5 + Math.sin(phase) * 0.4
-    const mat = this.endMarker.material as THREE.MeshBasicMaterial
+    const mat = this.endMarker.material as MeshBasicMaterial
     mat.opacity = pulse
     this.exitGlow.intensity = 0.3 + Math.sin(phase) * 0.25
   }
@@ -316,7 +333,7 @@ export class MazeRenderer {
     if (!key) return
     const mesh = this.wallMeshes.get(key)
     if (!mesh) return
-    const mat = mesh.material as THREE.MeshStandardMaterial
+    const mat = mesh.material as MeshStandardMaterial
     this.fadingWall = {
       mesh,
       origTransparent: mat.transparent,
@@ -339,14 +356,14 @@ export class MazeRenderer {
     const w = this.fadingWall
     w.progress += dt
     const t = Math.min(w.progress / this.FADE_DURATION, 1)
-    const mat = w.mesh.material as THREE.MeshStandardMaterial
+    const mat = w.mesh.material as MeshStandardMaterial
     mat.opacity = w.stage === 'out' ? 1 - t : t
     return t >= 1
   }
 
   resetWallFade(): void {
     if (this.fadingWall) {
-      const mat = this.fadingWall.mesh.material as THREE.MeshStandardMaterial
+      const mat = this.fadingWall.mesh.material as MeshStandardMaterial
       mat.transparent = this.fadingWall.origTransparent
       mat.opacity = this.fadingWall.origOpacity
       this.fadingWall = null
@@ -355,15 +372,15 @@ export class MazeRenderer {
 
   showGunPickup(col: number, row: number): void {
     const pos = this.gridToWorld(col, row)
-    const geo = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8)
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700 })
-    const mesh = new THREE.Mesh(geo, mat)
+    const geo = new CylinderGeometry(0.08, 0.08, 0.3, 8)
+    const mat = new MeshBasicMaterial({ color: 0xffd700 })
+    const mesh = new Mesh(geo, mat)
     mesh.position.set(pos.x, 0.15, pos.z)
     mesh.rotation.x = Math.PI / 2
     this.group.add(mesh)
     this.effectMeshes.push(mesh)
 
-    const light = new THREE.PointLight(0xffd700, 2, 4, 2)
+    const light = new PointLight(0xffd700, 2, 4, 2)
     light.position.set(pos.x, 0.5, pos.z)
     this.group.add(light)
     this.effectLights.push(light)
@@ -396,16 +413,16 @@ export class MazeRenderer {
       const ctx = canvas.getContext('2d')!
       ctx.filter = 'contrast(2) brightness(0.5)'
       ctx.drawImage(img, 0, 0, cw, ch)
-      const texture = new THREE.CanvasTexture(canvas)
+      const texture = new CanvasTexture(canvas)
       texture.needsUpdate = true
       mat.map = texture
       mat.needsUpdate = true
     }
     img.src = `/images/monster${imageIndex}.webp`
 
-    const plane = new THREE.PlaneGeometry(CELL * 0.5, WALL_H * 0.5)
-    const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true })
-    const mesh = new THREE.Mesh(plane, mat)
+    const plane = new PlaneGeometry(CELL * 0.5, WALL_H * 0.5)
+    const mat = new MeshBasicMaterial({ side: DoubleSide, transparent: true })
+    const mesh = new Mesh(plane, mat)
     const pullback = WALL_THICK / 2 + 0.02
     mesh.position.set(faceX - dir.dx * pullback, WALL_H / 2 * 0.75, faceZ - dir.dz * pullback)
     mesh.rotation.y = rotationY
@@ -415,7 +432,7 @@ export class MazeRenderer {
 
   showDeathEffect(col: number, row: number): void {
     const pos = this.gridToWorld(col, row)
-    const light = new THREE.PointLight(0xff0000, 4, 6, 2)
+    const light = new PointLight(0xff0000, 4, 6, 2)
     light.position.set(pos.x, 1, pos.z)
     this.group.add(light)
     this.effectLights.push(light)
@@ -428,7 +445,7 @@ export class MazeRenderer {
 
   teleportEffect(col: number, row: number): void {
     const pos = this.gridToWorld(col, row)
-    const light = new THREE.PointLight(0x00aaff, 3, 5, 2)
+    const light = new PointLight(0x00aaff, 3, 5, 2)
     light.position.set(pos.x, 1, pos.z)
     this.group.add(light)
     this.effectLights.push(light)
@@ -468,13 +485,13 @@ export class MazeRenderer {
     const pos = this.getExitWorldPosition()
 
     for (let i = 0; i < 8; i++) {
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.1, 0.15, 24),
-        new THREE.MeshBasicMaterial({
+      const ring = new Mesh(
+        new RingGeometry(0.1, 0.15, 24),
+        new MeshBasicMaterial({
           color: 0xffd700,
           transparent: true,
           opacity: 0,
-          side: THREE.DoubleSide,
+          side: DoubleSide,
         }),
       )
       const angle = (i / 8) * Math.PI * 2
@@ -486,7 +503,7 @@ export class MazeRenderer {
       this.effectMeshes.push(ring)
     }
 
-    const goldLight = new THREE.PointLight(0xffdd44, 0, 20, 2)
+    const goldLight = new PointLight(0xffdd44, 0, 20, 2)
     goldLight.position.set(pos.x, 2, pos.z)
     this.group.add(goldLight)
     this.effectLights.push(goldLight)
@@ -497,7 +514,7 @@ export class MazeRenderer {
     const elapsed = performance.now() * 0.001
     const pos = this.getExitWorldPosition()
 
-    const mat = this.endMarker.material as THREE.MeshBasicMaterial
+    const mat = this.endMarker.material as MeshBasicMaterial
     mat.color.setHSL(0.1, 1, 0.6)
     mat.opacity = 0.9
     const scale = 1 + Math.sin(elapsed * 3) * 0.2
@@ -514,7 +531,7 @@ export class MazeRenderer {
       const radius = 0.3 + phase * 0.15
       ring.position.x = pos.x + Math.cos(angle) * radius
       ring.position.z = pos.z + Math.sin(angle) * radius
-      const ringMat = ring.material as THREE.MeshBasicMaterial
+      const ringMat = ring.material as MeshBasicMaterial
       ringMat.opacity = Math.min(0.6, phase * 0.15)
       ring.scale.setScalar(1 + phase * 0.1)
     }
@@ -562,7 +579,7 @@ export class MazeRenderer {
     this.wallMeshes.clear()
     this.scene.remove(this.group)
     this.group.traverse(child => {
-      if (child instanceof THREE.Mesh) {
+      if (child instanceof Mesh) {
         child.geometry.dispose()
         if (Array.isArray(child.material)) {
           child.material.forEach(m => m.dispose())
