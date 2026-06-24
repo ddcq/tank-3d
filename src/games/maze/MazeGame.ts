@@ -74,6 +74,7 @@ export class MazeGame extends GameBase {
   private approachGun: Group | null = null
   private handleAudioClick = () => this.audio.userGesture()
   private handleAudioTouch = () => this.audio.userGesture()
+  private fakeWallSet = new Set<string>()
 
   async init(): Promise<void> {
     this.scene = new Scene()
@@ -101,6 +102,12 @@ export class MazeGame extends GameBase {
     this.loadGunModel()
 
     this.mazeData = generateMaze(10, 30)
+
+    // Build fakeWallSet for O(1) lookups
+    this.fakeWallSet.clear()
+    for (const fw of this.mazeData.fakeWalls) {
+      this.fakeWallSet.add(`${fw.dir}:${fw.row}:${fw.col}`)
+    }
 
     this.mazeRenderer = new MazeRenderer(this.scene, this.mazeData)
     await this.mazeRenderer.init()
@@ -265,11 +272,7 @@ export class MazeGame extends GameBase {
       key = `h:${row - 1}:${col}`
     }
 
-    for (const fw of this.mazeData.fakeWalls) {
-      const fwKey = `${fw.dir}:${fw.row}:${fw.col}`
-      if (fwKey === key) return true
-    }
-    return false
+    return this.fakeWallSet.has(key)
   }
 
   private removeFakeWall(): void {
@@ -289,6 +292,7 @@ export class MazeGame extends GameBase {
       key = `h:${row - 1}:${col}`
     }
 
+    this.fakeWallSet.delete(key)
     this.mazeRenderer.removeWall(key)
     this.minimap.removeFakeWall(key)
   }
