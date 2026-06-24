@@ -91,6 +91,8 @@ export class MazePlayerController {
   private readonly hWalls: Uint8Array
   private readonly w: number
   private readonly h: number
+  private readonly endCol: number
+  private readonly endRow: number
 
   constructor(maze: MazeData) {
     this.vWalls = maze.vWalls
@@ -99,14 +101,35 @@ export class MazePlayerController {
     this.h = maze.height
     this.col = maze.startCol
     this.row = maze.startRow
-    this.dirIndex = 0
+    this.endCol = maze.endCol
+    this.endRow = maze.endRow
+
+    // Find first available direction
+    let foundDir = false
+    for (let i = 0; i < 4; i++) {
+      const dir = DIRS[i]
+      const nc = this.col + dir.dx
+      const nr = this.row + dir.dz
+      if (this.canMoveTo(nc, nr)) {
+        this.dirIndex = i
+        foundDir = true
+        break
+      }
+    }
+
+    if (!foundDir) {
+      this.dirIndex = 0
+    }
+
+    this.rotation = this.dirIndex * Math.PI / 2
+
     const pos = cellToWorld(this.col, this.row, this.w)
     this.worldX = pos.x
     this.worldZ = pos.z
     this.fromX = pos.x
     this.fromZ = pos.z
 
-    const dir = DIRS[0]
+    const dir = DIRS[this.dirIndex]
     const nc = this.col + dir.dx
     const nr = this.row + dir.dz
     if (this.canMoveTo(nc, nr)) {
@@ -207,7 +230,7 @@ export class MazePlayerController {
     this.worldZ = this.toZ
     this.moveProgress = 1
     this.onStep?.()
-    if (this.row === 0) {
+    if (this.col === this.endCol && this.row === this.endRow) {
       this.state = PlayerState.WIN
       this.onWin?.()
     }
