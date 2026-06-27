@@ -53,6 +53,8 @@ export class MazeGame extends GameBase {
   private readonly GUN_APPROACH_DURATION = 0.5
   private gunApproachPhase: 'none' | 'approaching' = 'none'
   private approachGun: THREE.Group | null = null
+  private handleAudioClick = () => this.audio.userGesture()
+  private handleAudioTouch = () => this.audio.userGesture()
 
   async init(): Promise<void> {
     this.scene = new THREE.Scene()
@@ -70,8 +72,8 @@ export class MazeGame extends GameBase {
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.container.appendChild(this.renderer.domElement)
 
-    this.renderer.domElement.addEventListener('click', () => this.audio.userGesture())
-    this.renderer.domElement.addEventListener('touchstart', () => this.audio.userGesture())
+    this.renderer.domElement.addEventListener('click', this.handleAudioClick)
+    this.renderer.domElement.addEventListener('touchstart', this.handleAudioTouch)
 
     this.initAudio()
 
@@ -193,6 +195,8 @@ export class MazeGame extends GameBase {
     window.removeEventListener('resize', this.onResize)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+    this.renderer.domElement.removeEventListener('click', this.handleAudioClick)
+    this.renderer.domElement.removeEventListener('touchstart', this.handleAudioTouch)
     if (this.gunModel) {
       this.scene.remove(this.gunModel)
       this.gunModel = null
