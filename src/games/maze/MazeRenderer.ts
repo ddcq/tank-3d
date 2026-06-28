@@ -59,6 +59,13 @@ export class MazeRenderer {
   private effectLights: PointLight[] = []
   private winActive = false
   private winParticles: Mesh[] = []
+  private monsterAnim: {
+    mesh: Mesh
+    dirX: number
+    dirZ: number
+    speed: number
+  } | null = null
+  private pendingMonsterMesh: Mesh | null = null
 
 
   constructor(private readonly scene: Scene, private readonly maze: MazeData) { }
@@ -390,7 +397,7 @@ export class MazeRenderer {
     this.effectLights.push(light)
   }
 
-  showMonster(col: number, row: number, dir: { dx: number; dz: number }, imageIndex: number): void {
+  showMonster(col: number, row: number, dir: { dx: number; dz: number }, imageIndex: number, charge = false): void {
     const pos = this.gridToWorld(col, row)
     const faceX = pos.x + dir.dx * HALF
     const faceZ = pos.z + dir.dz * HALF
@@ -432,6 +439,28 @@ export class MazeRenderer {
     mesh.rotation.y = rotationY
     this.group.add(mesh)
     this.effectMeshes.push(mesh)
+    this.pendingMonsterMesh = mesh
+
+    if (charge) {
+      this.monsterAnim = { mesh, dirX: -dir.dx, dirZ: -dir.dz, speed: 1 }
+    }
+  }
+
+  startMonsterCharge(dir: { dx: number; dz: number }): void {
+    if (this.monsterAnim || !this.pendingMonsterMesh) return
+    this.monsterAnim = {
+      mesh: this.pendingMonsterMesh,
+      dirX: -dir.dx,
+      dirZ: -dir.dz,
+      speed: 1,
+    }
+  }
+
+  updateMonster(dt: number): void {
+    if (!this.monsterAnim) return
+    const { mesh, dirX, dirZ, speed } = this.monsterAnim
+    mesh.position.x += dirX * speed * dt
+    mesh.position.z += dirZ * speed * dt
   }
 
   showDeathEffect(col: number, row: number): void {
@@ -461,6 +490,8 @@ export class MazeRenderer {
   }
 
   clearEffects(): void {
+    this.monsterAnim = null
+    this.pendingMonsterMesh = null
     this.winActive = false
     this.winParticles = []
     for (const mesh of this.effectMeshes) {

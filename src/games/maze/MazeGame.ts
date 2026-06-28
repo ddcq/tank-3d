@@ -32,7 +32,7 @@ type SurpriseType = 'gun' | 'monster' | 'transparent_wall' | 'teleport' | 'lante
 
 const ROT180 = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI)
 
-export class MazeGame extends GameBase {
+export default class MazeGame extends GameBase {
   readonly id = 'maze'
   readonly label = 'Labyrinthe 3D'
 
@@ -64,7 +64,9 @@ export class MazeGame extends GameBase {
   private deadEndInfo: DeadEndInfo | null = null
   private wallFadePhase: 'fade_out' | 'walk' | 'fade_in' | null = null
   private visitedDeadEnds = new Map<string, SurpriseType>()
+  private deadEndApproachSurprises = new Map<string, SurpriseType>()
   private hudSurprise = document.createElement('div')
+  private hudBonusIcon = document.createElement('img')
   private hudWeapon = document.createElement('div')
   private visibilityRadius = 2
   private guidePath: [number, number][] | null = null
@@ -120,6 +122,7 @@ export class MazeGame extends GameBase {
     this.player.onConfirm = () => this.audio.playConfirm()
     this.player.onWin = () => this.audio.playWin()
     this.player.onDeadEndEntry = (info) => this.handleDeadEndSurprise(info)
+    this.player.onApproachingDeadEnd = (info) => this.handleApproachingDeadEnd(info)
 
     this.smoothLookX = this.player.worldX
     this.smoothLookZ = this.player.worldZ
@@ -167,6 +170,14 @@ export class MazeGame extends GameBase {
     this.hudSurprise.style.display = 'none'
     document.body.appendChild(this.hudSurprise)
 
+    this.hudBonusIcon.style.cssText = `
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 160px; height: 160px; z-index: 20; pointer-events: none;
+      filter: drop-shadow(0 0 12px rgba(255,200,0,.6));
+      display: none;
+    `
+    document.body.appendChild(this.hudBonusIcon)
+
     this.hudWeapon.className = 'maze-hud-weapon'
     document.body.appendChild(this.hudWeapon)
   }
@@ -181,10 +192,25 @@ export class MazeGame extends GameBase {
         lantern: 'Lanterne',
         path: 'Itinéraire',
       }
-      this.hudSurprise.textContent = names[this.currentSurprise]
-      this.hudSurprise.style.display = 'block'
+      const iconMap: Partial<Record<SurpriseType, string>> = {
+        lantern: '/images/lantern.webp',
+        path: '/images/compass.webp',
+        teleport: '/images/teleport.webp',
+        gun: '/images/gun.webp',
+      }
+      const icon = iconMap[this.currentSurprise]
+      if (icon) {
+        this.hudSurprise.style.display = 'none'
+        this.hudBonusIcon.src = icon
+        this.hudBonusIcon.style.display = 'block'
+      } else {
+        this.hudBonusIcon.style.display = 'none'
+        this.hudSurprise.textContent = names[this.currentSurprise]
+        this.hudSurprise.style.display = 'block'
+      }
     } else {
       this.hudSurprise.style.display = 'none'
+      this.hudBonusIcon.style.display = 'none'
     }
 
     this.hudWeapon.textContent = this.player.hasGun
@@ -249,6 +275,7 @@ export class MazeGame extends GameBase {
     this.audio.dispose()
     this.renderer.dispose()
     this.hudSurprise.remove()
+    this.hudBonusIcon.remove()
     this.hudWeapon.remove()
     document.getElementById('maze-hud-styles')?.remove()
   }
@@ -297,6 +324,28 @@ export class MazeGame extends GameBase {
     this.minimap.removeFakeWall(key)
   }
 
+  private handleApproachingDeadEnd(info: DeadEndInfo): void {
+    const key = `${info.col}:${info.row}`
+    if (this.visitedDeadEnds.has(key) || this.deadEndApproachSurprises.has(key)) return
+
+    const type = this.pickSurprise(info)
+    this.deadEndApproachSurprises.set(key, type)
+
+    switch (type) {
+      case 'gun':
+        this.mazeRenderer.showGunPickup(info.col, info.row)
+        break
+      case 'monster': {
+        const idx = Math.floor(Math.random() * 7) + 1
+        this.mazeRenderer.showMonster(info.col, info.row, info.forwardDir, idx, false)
+        break
+      }
+      case 'teleport':
+        this.mazeRenderer.teleportEffect(info.col, info.row)
+        break
+    }
+  }
+
   private handleDeadEndSurprise(info: DeadEndInfo): boolean {
     const key = `${info.col}:${info.row}`
 
@@ -307,6 +356,47 @@ export class MazeGame extends GameBase {
       this.wallFadePhase = 'fade_out'
       this.mazeRenderer.startWallFadeOut(info.col, info.row, info.forwardDir)
       this.audio.playConfirm()
+      return true
+    }
+
+    const preType = this.deadEndApproachSurprises.get(key)
+    if (preType) {
+      this.deadEndApproachSurprises.delete(key)
+      this.visitedDeadEnds.set(key, preType)
+      this.currentSurprise = preType
+      this.deadEndInfo = info
+      this.surpriseTimer = this.getSurpriseDuration(preType)
+
+      switch (preType) {
+        case 'gun':
+          this.audio.playGunPickup()
+          if (this.player.bullets === 0 && this.approachGun && this.gunModel) {
+            this.gunApproachPhase = 'approaching'
+            this.approachGun.visible = true
+            this.gunModel.visible = false
+          }
+          break
+        case 'monster':
+          if (!this.player.hasGun) {
+            this.audio.playMonster()
+            this.audio.playMonsterApproach()
+            this.mazeRenderer.startMonsterCharge(info.forwardDir)
+          }
+          break
+        case 'teleport':
+          this.audio.playTeleport()
+          this.doTeleport()
+          break
+        case 'lantern':
+          this.audio.playConfirm()
+          this.applyLantern()
+          break
+        case 'path':
+          this.audio.playConfirm()
+          this.applyGuidePath()
+          break
+      }
+
       return true
     }
 
@@ -339,13 +429,10 @@ export class MazeGame extends GameBase {
   }
 
   private pickSurprise(_info: DeadEndInfo): SurpriseType {
-    const types: SurpriseType[] = ['teleport', 'lantern']
+    const types: SurpriseType[] = ['monster', 'path', 'teleport', 'lantern', 'gun']
     if (!this.player.hasGun) {
-      types.push('gun', 'gun')
-    } else {
       types.push('gun')
     }
-    types.push('monster', 'path')
     return types[Math.floor(Math.random() * types.length)]
   }
 
@@ -377,7 +464,7 @@ export class MazeGame extends GameBase {
         }
         {
           const idx = Math.floor(Math.random() * 7) + 1
-          this.mazeRenderer.showMonster(info.col, info.row, info.forwardDir, idx)
+          this.mazeRenderer.showMonster(info.col, info.row, info.forwardDir, idx, !this.player.hasGun)
         }
         if (!this.player.hasGun) {
           this.audio.playMonsterApproach()
@@ -742,6 +829,7 @@ export class MazeGame extends GameBase {
     }
 
     this.mazeRenderer.updatePlayerPosition(this.player.col, this.player.row)
+    this.mazeRenderer.updateMonster(dt)
     this.mazeRenderer.updateLamps(dt)
     this.mazeRenderer.updateExit(dt)
     this.minimap.update(this.player)
@@ -823,12 +911,14 @@ export class MazeGame extends GameBase {
     if (this.approachGun) this.approachGun.visible = false
     this.wallFadePhase = null
     this.visitedDeadEnds.clear()
+    this.deadEndApproachSurprises.clear()
     cancelAnimationFrame(this.rafId)
 
     this.scene.remove(this.mazeRenderer.group)
     this.mazeRenderer.dispose()
     this.container.innerHTML = ''
     this.hudSurprise.remove()
+    this.hudBonusIcon.remove()
     this.hudWeapon.remove()
     document.getElementById('maze-hud-styles')?.remove()
 

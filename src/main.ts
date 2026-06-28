@@ -1,13 +1,11 @@
 import './ui/styles.css'
 import { GameRegistry } from './core/GameRegistry'
-import { MazeGame } from './games/maze/MazeGame'
-import { TankGame } from './games/tank-shooter/TankGame'
 import { CalibrationScreen } from './ui/CalibrationScreen'
 import { MainMenu } from './ui/MainMenu'
 import { HeadTrackingSystemImpl } from './systems/headTracking/HeadTrackingSystem'
 
-GameRegistry.register('maze', 'Labyrinthe 3D', MazeGame)
-GameRegistry.register('tank', 'Tank Shooter', TankGame)
+GameRegistry.register('maze', 'Labyrinthe 3D', () => import('./games/maze/MazeGame'))
+GameRegistry.register('tank', 'Tank Shooter', () => import('./games/tank-shooter/TankGame'))
 
 async function runCalibration(): Promise<{ noseX: number; noseY: number }> {
   const screen = new CalibrationScreen()

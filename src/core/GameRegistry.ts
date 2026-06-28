@@ -1,17 +1,19 @@
 import type { GameBase } from './GameBase'
 import type { MenuButton } from '../ui/MainMenu'
 
+type GameLoader = () => Promise<{ default: new (container: HTMLElement) => GameBase }>
+
 interface GameEntry {
   id: string
   label: string
-  ctor: new (container: HTMLElement) => GameBase
+  loader: GameLoader
 }
 
 export class GameRegistry {
   private static entries: GameEntry[] = []
 
-  static register(id: string, label: string, ctor: new (container: HTMLElement) => GameBase): void {
-    this.entries.push({ id, label, ctor })
+  static register(id: string, label: string, loader: GameLoader): void {
+    this.entries.push({ id, label, loader })
   }
 
   static getMenuButtons(): MenuButton[] {
@@ -21,7 +23,8 @@ export class GameRegistry {
   static async launch(id: string, container: HTMLElement): Promise<void> {
     const entry = this.entries.find(e => e.id === id)
     if (!entry) throw new Error(`No game registered with id "${id}"`)
-    const game = new entry.ctor(container)
+    const mod = await entry.loader()
+    const game = new mod.default(container)
     await game.init()
     game.start()
 

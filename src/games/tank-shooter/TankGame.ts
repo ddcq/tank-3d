@@ -30,7 +30,7 @@ interface GameState {
   gameOver: boolean
 }
 
-export class TankGame extends GameBase {
+export default class TankGame extends GameBase {
   readonly id = 'tank'
   readonly label = 'Tank Shooter'
 

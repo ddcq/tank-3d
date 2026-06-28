@@ -72,6 +72,7 @@ export class MazePlayerController {
   onConfirm?: () => void
   onWin?: () => void
   onDeadEndEntry?: (info: DeadEndInfo) => boolean
+  onApproachingDeadEnd?: (info: DeadEndInfo) => void
 
   private fromX = 0
   private fromZ = 0
@@ -161,6 +162,15 @@ export class MazePlayerController {
     if (dr === 1) return this.hWalls[this.row * this.w + this.col] === 0
     if (dr === -1) return this.hWalls[(this.row - 1) * this.w + this.col] === 0
     return false
+  }
+
+  private countOpenWalls(col: number, row: number): number {
+    let count = 0
+    if (col < this.w - 1 && this.vWalls[row * (this.w - 1) + col] === 0) count++
+    if (col > 0 && this.vWalls[row * (this.w - 1) + (col - 1)] === 0) count++
+    if (row < this.h - 1 && this.hWalls[row * this.w + col] === 0) count++
+    if (row > 0 && this.hWalls[(row - 1) * this.w + col] === 0) count++
+    return count
   }
 
   private beginStep(col: number, row: number): void {
@@ -334,7 +344,17 @@ export class MazePlayerController {
       this.headLookAngle = 0
     } else if (wallCount === 2) {
       if (openForward) {
-        this.beginStep(this.col + fwd.dx, this.row + fwd.dz)
+        const nc = this.col + fwd.dx
+        const nr = this.row + fwd.dz
+        if (this.countOpenWalls(nc, nr) === 1) {
+          this.onApproachingDeadEnd?.({
+            col: nc,
+            row: nr,
+            forwardDir: fwd,
+            isBoundary: nc < 0 || nc >= this.w || nr < 0 || nr >= this.h,
+          })
+        }
+        this.beginStep(nc, nr)
       } else if (openLeft) {
         const targetIdx = DIRS.findIndex(d => d.dx === left.dx && d.dz === left.dz)
         this.state = PlayerState.TURNING
@@ -445,7 +465,17 @@ export class MazePlayerController {
         this.targetRotation = this.rotation + diff * Math.PI / 2
         this.dirIndex = chosenIdx >= 0 ? chosenIdx : this.dirIndex
       } else {
-        this.beginStep(this.col + bestDir.dx, this.row + bestDir.dz)
+        const nc = this.col + bestDir.dx
+        const nr = this.row + bestDir.dz
+        if (this.countOpenWalls(nc, nr) === 1) {
+          this.onApproachingDeadEnd?.({
+            col: nc,
+            row: nr,
+            forwardDir: bestDir,
+            isBoundary: nc < 0 || nc >= this.w || nr < 0 || nr >= this.h,
+          })
+        }
+        this.beginStep(nc, nr)
         this.state = PlayerState.MOVING
         this.stateTimer = 0
       }
@@ -463,7 +493,17 @@ export class MazePlayerController {
       this.stateTimer = 0
       if (this.justConfirmed) {
         this.justConfirmed = false
-        this.beginStep(this.col + this.direction.dx, this.row + this.direction.dz)
+        const nc = this.col + this.direction.dx
+        const nr = this.row + this.direction.dz
+        if (this.countOpenWalls(nc, nr) === 1) {
+          this.onApproachingDeadEnd?.({
+            col: nc,
+            row: nr,
+            forwardDir: this.direction,
+            isBoundary: nc < 0 || nc >= this.w || nr < 0 || nr >= this.h,
+          })
+        }
+        this.beginStep(nc, nr)
         this.state = PlayerState.MOVING
       } else {
         this.state = PlayerState.MOVING
